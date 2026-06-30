@@ -12,6 +12,15 @@ st.set_page_config(page_title="نظام حاضر AI", page_icon="🎓", layout="
 # مسار مجلد الصور المرجعية
 DB_PATH = "knowledge_base"
 
+# قائمة المواد الدراسية المتاحة في النظام
+SUBJECTS = [
+    "الذكاء الاصطناعي (AI)",
+    "معالجة الصور الرقمية (Digital Image Processing)",
+    "الأمن السيبراني (Cybersecurity)",
+    "هندسة البرمجيات (Software Engineering)",
+    "تنقيب البيانات (Data Mining)"
+]
+
 # دالة محاكاة التحقق من الوجه (Haar Cascade + حواف)
 def verify_attendance(uploaded_image, db_path):
     if not os.path.exists(db_path):
@@ -65,27 +74,34 @@ st.markdown("---")
 menu = ["تسجيل الحضور", "لوحة تحكم الإدارة"]
 choice = st.sidebar.selectbox("القائمة الرئيسية", menu)
 
-# ملف تخزين الحضور (CSV)
+# ملف تخزين الحضور (CSV) شامل خانة المادة
 LOG_FILE = "attendance_log.csv"
 if not os.path.exists(LOG_FILE):
-    df = pd.DataFrame(columns=["اسم الطالبة", "التاريخ", "الوقت", "الحالة", "كشف الحيوية"])
+    df = pd.DataFrame(columns=["اسم الطالبة", "المادة الدراسية", "التاريخ", "الوقت", "الحالة", "كشف الحيوية"])
     df.to_csv(LOG_FILE, index=False)
 
 if choice == "تسجيل الحضور":
     st.header("📸 التحقق الآلي من الهوية واختبار الحيوية الذكي")
     
-    # نظام توليد التحديات الحية عشوائياً لمنع التزوير والاستخدام العادل للصور الثابتة
+    # اختيار المادة الدراسية أولاً
+    st.subheader("📚 خطوة 1: اختيار المادة الدراسية")
+    selected_subject = st.selectbox("الرجاء اختيار المادة المراد تسجيل الحضور فيها:", SUBJECTS)
+    
+    st.markdown("---")
+    st.subheader("🔒 خطوة 2: اختبار الأمان وكشف الحيوية")
+    
+    # نظام توليد التحديات الحية عشوائياً لمنع التزوير
     if 'liveness_challenge' not in st.session_state:
         challenges = [
             {"text": "الرجاء الابتسام بشكل واضح أمام الكاميرا 😊", "icon": "😊"},
             {"text": "الرجاء رمش العينين مرتين متتاليتين 😉", "icon": "😉"},
-            {"text": "الرجاء إمالة الرأس قليلاً نحو اليمين أو اليسار 📍", "icon": "📍"},
+            {"text": "الرجاء إمالة الرأس قليلاً نحو اليمين أو اليسar 📍", "icon": "📍"},
             {"text": "الرجاء رفع اليد أمام الكاميرا للإشارة 🖐️", "icon": "🖐️"}
         ]
         st.session_state.liveness_challenge = random.choice(challenges)
     
     # صندوق تنبيه ملون يوضح التحدي المطلوب من الطالبة
-    st.info(f"🔒 **اختبار الأمان وكشف الحيوية (Liveness Detection):** {st.session_state.liveness_challenge['text']}")
+    st.info(f"🔒 **اختبار الأمان الحركي (Liveness Detection):** {st.session_state.liveness_challenge['text']}")
     
     input_method = st.radio("اختر طريقة التحقق المتاحة:", ["📸 التقاط صورة حية فورية", "📁 رفع صورة من الجهاز"])
     
@@ -106,9 +122,9 @@ if choice == "تسجيل الحضور":
                 else:
                     st.success(f"✅ تم التحقق بنجاح! تم اجتياز اختبار الأمان (Liveness Test)")
                     st.balloons()
-                    st.info(f"مرحباً بالطالبة: {student_name}")
+                    st.info(f"مرحباً بالطالبة: {student_name} | المادة: {selected_subject}")
                     
-                    # تسجيل في الـ CSV مع توثيق كشف الحيوية لتقديمه للمناقشين
+                    # تسجيل في الـ CSV مع توثيق المادة وكشف الحيوية
                     now = datetime.now()
                     current_date = now.strftime("%Y-%m-%d")
                     current_time = now.strftime("%H:%M:%S")
@@ -116,6 +132,7 @@ if choice == "تسجيل الحضور":
                     log_df = pd.read_csv(LOG_FILE)
                     new_row = pd.DataFrame([{
                         "اسم الطالبة": student_name, 
+                        "المادة الدراسية": selected_subject,
                         "التاريخ": current_date, 
                         "الوقت": current_time, 
                         "الحالة": "حاضر",
@@ -123,7 +140,7 @@ if choice == "تسجيل الحضور":
                     }])
                     log_df = pd.concat([log_df, new_row], ignore_index=True)
                     log_df.to_csv(LOG_FILE, index=False)
-                    st.toast("تم قيد حضوركِ بنجاح وأرشفة الحركة الأمنية!")
+                    st.toast("تم قيد حضوركِ بنجاح وأرشفة المادة والحركة الأمنية!")
                     
                     # إعادة تعيين التحدي للمستخدم القادم
                     del st.session_state.liveness_challenge
@@ -138,32 +155,37 @@ elif choice == "لوحة تحكم الإدارة":
         log_df = pd.read_csv(LOG_FILE)
         
         if not log_df.empty:
-            st.subheader("🔍 تصفية وفلترة البيانات وعمليات المراجعة")
-            col1, col2 = st.columns(2)
+            st.subheader("🔍 فلاتر تصفية البيانات وعمليات المراجعة الذكية")
+            col1, col2, col3 = st.columns(3)
             with col1:
                 search_name = st.text_input("البحث باسم الطالبة")
             with col2:
+                available_subjects = ["الكل"] + SUBJECTS
+                selected_sub = st.selectbox("تصفية حسب المادة الدراسية", available_subjects)
+            with col3:
                 available_dates = ["الكل"] + list(log_df["التاريخ"].unique())
                 selected_date = st.selectbox("تصفية حسب التاريخ", available_dates)
             
-            # تطبيق الفلاتر
+            # تطبيق الفلاتر المحدثة
             filtered_df = log_df.copy()
             if search_name:
                 filtered_df = filtered_df[filtered_df["اسم الطالبة"].str.contains(search_name, na=False)]
+            if selected_sub != "الكل":
+                filtered_df = filtered_df[filtered_df["المادة الدراسية"] == selected_sub]
             if selected_date != "الكل":
                 filtered_df = filtered_df[filtered_df["التاريخ"] == selected_date]
                 
             st.dataframe(filtered_df, use_container_width=True)
             
-            # زر التحميل
+            # زر التحميل لملف التقرير المصفى
             csv = filtered_df.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 تحميل سجل الحضور المصفى كملف Excel/CSV",
                 data=csv,
-                file_name=f"Hader_AI_Attendance_Report.csv",
+                file_name=f"Hader_AI_Report_{datetime.now().strftime('%Y%m%d')}.csv",
                 mime="text/csv",
             )
         else:
-            st.info("السجل فارغ حالياً، لم يتم رصد حضور بعد.")
+            st.info("السجل فارغ حالياً، لم يتم رصد حضور بعد في أي مادة.")
     elif password != "":
         st.error("الرقم السري غير صحيح! ليس لديك الصلاحية.")
