@@ -29,26 +29,38 @@ STUDENTS_DB = {
     "441004": "أروى حسن"
 }
 
-# دالة محاكاة التحقق من الوجه (Haar Cascade + حواف)
+# دالة محاكاة التحقق من الوجه
 def verify_attendance(uploaded_image, db_path, student_id):
     if not os.path.exists(db_path):
         return False, "مجلد الصور المرجعية غير موجود."
     
-    # قراءة الصورة المرفوعة
     file_bytes = np.asarray(bytearray(uploaded_image.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
     gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
-    # كاشف الوجوه الأساسي
     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
     faces = face_cascade.detectMultiScale(gray_img, 1.1, 4)
     
     if len(faces) == 0:
         return False, "لم يتم رصد أي وجه في الصورة. يرجى توجيه وجهكِ بالكامل للكاميرا."
     
-    # في الأنظمة الذكية، يتم مطابقة الصورة المرفوعة مع الصورة المسمى برقم الطالبة الجامعي لتأكيد الهوية
-    # هنا سنقوم بمحاكاة المطابقة الناجحة لتسهيل العرض التجريبي
     return True, None
+
+# دالة ذكية لقراءة ملف السجل بأمان وتجنب خطأ KeyError
+def load_attendance_log(file_path):
+    required_columns = ["الرقم الجامعي", "اسم الطالبة", "المادة الدراسية", "التاريخ", "الوقت", "الحالة", "كشف الحيوية"]
+    if os.path.exists(file_path):
+        try:
+            df = pd.read_csv(file_path)
+            # التحقق من وجود جميع الأعمدة المطلوبة لتفادي تضارب الملف القديم
+            if all(col in df.columns for col in required_columns):
+                return df
+        except:
+            pass
+    # في حال عدم وجود الملف أو نقص الأعمدة، يتم بناء جدول جديد تماماً
+    df = pd.DataFrame(columns=required_columns)
+    df.to_csv(file_path, index=False)
+    return df
 
 # واجهة المستخدم والتنقل
 st.title("🎓 نظام تحضير الطالبات الذكي - حاضر AI")
@@ -57,11 +69,7 @@ st.markdown("---")
 menu = ["بوابة الطالبة (تسجيل دخول)", "تسجيل الحضور الذكي", "لوحة تحكم الإدارة (الدكتور)"]
 choice = st.sidebar.selectbox("القائمة الرئيسية", menu)
 
-# ملف تخزين الحضور (CSV) شامل خانة الرقم الجامعي والمادة
 LOG_FILE = "attendance_log.csv"
-if not os.path.exists(LOG_FILE):
-    df = pd.DataFrame(columns=["الرقم الجامعي", "اسم الطالبة", "المادة الدراسية", "التاريخ", "الوقت", "الحالة", "كشف الحيوية"])
-    df.to_csv(LOG_FILE, index=False)
 
 # --- 1️⃣ بوابة الطالبة (ملف الحضور والغياب) ---
 if choice == "بوابة الطالبة (تسجيل دخول)":
@@ -75,17 +83,21 @@ if choice == "بوابة الطالبة (تسجيل دخول)":
             student_name = STUDENTS_DB[student_id]
             st.success(f"أهلاً بكِ يا {student_name} (الرقم الجامعي: {student_id})")
             
-            # قراءة السجل لاستخراج بيانات الطالبة
-            log_df = pd.read_csv(LOG_FILE)
-            student_records = log_df[log_df["الرقم الجامعي"] == int(student_id)]
+            # قراءة السجل بأمان باستخدام الدالة المحدثة
+            log_df = load_attendance_log(LOG_FILE)
             
-            # عرض إحصائيات الحضور والغياب بشكل مرئي أنيق
+            # تصفية السجلات بأمان وتجنب الأخطاء البرمجية
+            if not log_df.empty:
+                log_df["الرقم الجامعي"] = log_df["الرقم الجامعي"].astype(str)
+                student_records = log_df[log_df["الرقم الجامعي"] == str(student_id)]
+            else:
+                student_records = pd.DataFrame()
+            
             st.markdown("### 📊 ملخص حالتكِ الأكاديمية في كل المواد")
             col1, col2 = st.columns(2)
             with col1:
                 st.metric(label="✅ إجمالي عدد أيام الحضور المسجلة", value=len(student_records))
             with col2:
-                # محاكاة لعدد أيام الغياب بناءً على جدول افتراضي
                 st.metric(label="❌ إجمالي عدد أيام الغياب (التقديري)", value=max(0, 3 - len(student_records)))
             
             st.markdown("---")
@@ -146,14 +158,15 @@ elif choice == "تسجيل الحضور الذكي":
                             st.success(f"✅ تم التحقق بنجاح واجتياز اختبار الحيوية!")
                             st.balloons()
                             
-                            # قيد البيانات في الـ CSV
+                            # قراءة وقيد البيانات بأمان
+                            log_df = load_attendance_log(LOG_FILE)
+                            
                             now = datetime.now()
                             current_date = now.strftime("%Y-%m-%d")
                             current_time = now.strftime("%H:%M:%S")
                             
-                            log_df = pd.read_csv(LOG_FILE)
                             new_row = pd.DataFrame([{
-                                "الرقم الجامعي": int(student_id),
+                                "الرقم الجامعي": str(student_id),
                                 "اسم الطالبة": student_name, 
                                 "المادة الدراسية": selected_subject,
                                 "التاريخ": current_date, 
@@ -177,7 +190,7 @@ elif choice == "لوحة تحكم الإدارة (الدكتور)":
     if password == "admin123":
         st.success("تم تسجيل الدخول بنجاح")
         
-        log_df = pd.read_csv(LOG_FILE)
+        log_df = load_attendance_log(LOG_FILE)
         
         if not log_df.empty:
             st.subheader("🔍 فلاتر تصفية البيانات وعمليات المراجعة الذكية")
@@ -191,13 +204,11 @@ elif choice == "لوحة تحكم الإدارة (الدكتور)":
                 available_dates = ["الكل"] + list(log_df["التاريخ"].unique())
                 selected_date = st.selectbox("تصفية حسب التاريخ", available_dates)
             
-            # تطبيق الفلاتر المحدثة
             filtered_df = log_df.copy()
             if search_name:
-                # تصفية بالاسم أو الرقم الجامعي
                 filtered_df = filtered_df[
                     (filtered_df["اسم الطالبة"].str.contains(search_name, na=False)) | 
-                    (filtered_df["الرقم الجامعي"].astype(str).str.contains(search_name))
+                    (filtered_df["الرقم الجامعي"].astype(str).str.contains(search_name, na=False))
                 ]
             if selected_sub != "الكل":
                 filtered_df = filtered_df[filtered_df["المادة الدراسية"] == selected_sub]
@@ -206,7 +217,6 @@ elif choice == "لوحة تحكم الإدارة (الدكتور)":
                 
             st.dataframe(filtered_df, use_container_width=True)
             
-            # زر التحميل لملف التقرير المصفى للكلية
             csv = filtered_df.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 تحميل سجل الحضور المصفى كملف Excel/CSV",
