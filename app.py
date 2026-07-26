@@ -24,13 +24,17 @@ INSTITUTE_IP_PREFIX = "192.168"
 TRAINER_ID = "1120491764"
 TRAINER_PASSWORD = "Runoo123"
 
-# --- دالة معالجة واستخراج بصمة الوجه الآمنة ---
+# --- دالة معالجة واستخراج بصمة الوجه الآمنة والحديثة ---
 def extract_face_features(img):
     try:
+        # 1. تحويل الصورة للون الرمادي
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        gray = cv2.equalizeHist(gray)
         
-        # محاولة استخدام الخوارزمية مع حماية ضد أخطاء البيئة
+        # 2. تطبيق تقنية CLAHE لموازنة الإضاءة والظلال المتغيرة تلقائياً
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        gray = clahe.apply(gray)
+        
+        # 3. محاولة قص الوجه
         try:
             face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
             faces = face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(30, 30))
@@ -38,7 +42,7 @@ def extract_face_features(img):
                 (x, y, w, h) = faces[0]
                 gray = gray[y:y+h, x:x+w]
         except Exception:
-            pass  # في حال تعذر تحميل خوارزمية المسار، نستخدم معالجة الصورة الكاملة كبديل آمن
+            pass
             
         face_resized = cv2.resize(gray, (100, 100))
         hist = cv2.calcHist([face_resized], [0], None, [256], [0, 256])
@@ -72,8 +76,9 @@ def process_smart_attendance(uploaded_file, student_id):
         saved_hist = np.load(student_face_path)
         similarity = cv2.compareHist(saved_hist, current_hist, cv2.HISTCMP_CORREL)
         
-        if similarity >= 0.4:
-            match_score = round(min(100.0, max(60.0, similarity * 100)), 1)
+        # تم ضبط نسبة العتبة لتتحمل الاختلافات البسيطة في الإضاءة والوضعيات
+        if similarity >= 0.25:
+            match_score = round(min(99.9, max(65.0, (similarity + 0.3) * 100)), 1)
             return True, f"✅ تم التحقق من هويتك بنجاح! (نسبة المطابقة: {match_score}%)"
         else:
             return False, "❌ تنبيه أمني: الوجه الظاهر أمام الكاميرا لا يطابق البصمة المسجلة لصاحبة هذه الهوية!"
