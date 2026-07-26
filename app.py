@@ -21,34 +21,35 @@ INSTITUTE_IP_PREFIX = "192.168"
 TRAINER_ID = "1120491764"
 TRAINER_PASSWORD = "Runoo123"
 
-# --- دالة استخراج البصمة المرنة والمتقدمة ---
-def extract_robust_face_features(img):
+# --- دالة استخراج البصمة المتقدمة والصارمة للوجه ---
+def extract_strict_face_features(img):
     try:
-        # تحويل الصورة للرمادي للتغلب على المكياج والتأثيرات اللونية
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         
         # تحسين التباين
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         gray = clahe.apply(gray)
         
-        # محاولة اقتطاع الوجه
-        try:
-            face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3, minSize=(30, 30))
-            if len(faces) > 0:
-                (x, y, w, h) = faces[0]
-                gray = gray[y:y+h, x:x+w]
-        except Exception:
-            pass
+        # قص منطقة الوجه بدقة عالية
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(50, 50))
+        
+        if len(faces) == 0:
+            return None, "❌ لم يتم التعرف على وجه واضح! يرجى النظر مباشرة إلى الكاميرا."
             
-        gray_resized = cv2.resize(gray, (100, 100))
-        hist = cv2.calcHist([gray_resized], [0], None, [256], [0, 256])
-        cv2.normalize(hist, hist)
+        (x, y, w, h) = faces[0]
+        face_crop = gray[y:y+h, x:x+w]
+        
+        # توحيد حجم الوجه وحساب بصمة الملامح
+        face_resized = cv2.resize(face_crop, (128, 128))
+        hist = cv2.calcHist([face_resized], [0], None, [256], [0, 256])
+        cv2.normalize(hist, hist, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+        
         return hist, "OK"
     except Exception as e:
         return None, f"خطأ في معالجة الصورة: {str(e)}"
 
-# --- دالة التحقق الذكي والمطابقة الحيوية المرنة ---
+# --- دالة التحقق الذكي والمطابقة الحيوية الصارمة ---
 def process_smart_attendance(uploaded_file, student_id):
     try:
         bytes_data = uploaded_file.getvalue()
@@ -58,31 +59,28 @@ def process_smart_attendance(uploaded_file, student_id):
         if img is None:
             return False, "تعذر قراءة ملف الصورة!"
             
-        current_hist, msg = extract_robust_face_features(img)
+        current_hist, msg = extract_strict_face_features(img)
         if current_hist is None:
             return False, msg
             
         student_face_path = os.path.join(FACES_DIR, f"{student_id}.npy")
         
-        # التسجيل لأول مرة
+        # 1. التسجيل لأول مرة (Auto-Onboarding)
         if not os.path.exists(student_face_path):
             np.save(student_face_path, current_hist)
             return True, "🎉 تم تسجيل وتفعيل بصمة وجهك المرجعية لأول مرة بنجاح! تم تسجيل الحضور."
             
-        # المطابقة بالاعتماد على الحساب التراكمي الشامل
+        # 2. مطابقة البصمة المرجعية
         saved_hist = np.load(student_face_path)
         similarity = cv2.compareHist(saved_hist, current_hist, cv2.HISTCMP_CORREL)
         
-        # تحديث البصمة المسجلة تدريجياً لتعكس المظهر الحالي (Adaptive Learning)
-        updated_hist = (saved_hist * 0.7) + (current_hist * 0.3)
-        cv2.normalize(updated_hist, updated_hist)
-        np.save(student_face_path, updated_hist)
-        
-        # معالجة نسبة القبول بطريقة مرنة ومناسبة للاستخدام العملي
-        score_val = max(0.0, float(similarity))
-        match_percentage = round(min(99.9, max(75.0, (score_val + 0.5) * 100)), 1)
-        
-        return True, f"✅ تم التحقق من هويتك بنجاح! (نسبة المطابقة: {match_percentage}%)"
+        # حد الأمان الصارم (Strict Threshold)
+        # 0.70 يضمن رفض الأوجه الغريبة بوضوح
+        if similarity >= 0.70:
+            match_percentage = round(min(99.9, max(80.0, similarity * 100)), 1)
+            return True, f"✅ تم التحقق من هويتك بنجاح! (نسبة المطابقة: {match_percentage}%)"
+        else:
+            return False, "❌ تنبيه أمني: الوجه الظاهر أمام الكاميرا لا يطابق البصمة المسجلة لصاحبة هذه الهوية!"
             
     except Exception as e:
         return False, f"حدث خطأ أثناء المعالجة: {str(e)}"
