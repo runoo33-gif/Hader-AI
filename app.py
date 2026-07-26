@@ -17,16 +17,13 @@ INSTITUTE_IP_PREFIX = "192.168"
 
 # دالة كشف الوجه من الصورة الملتطقة
 def detect_face(image_bytes):
-    # تحويل الصورة إلى مصفوفة OpenCV
-    file_bytes = np.asarray(bytearray(image_bytes.read()), dtype=uint8)
+    file_bytes = np.asarray(bytearray(image_bytes.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, 1)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
-    # تحميل خوارزمية كشف الوجوه من OpenCV
     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
     faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
     
-    # إرجاع True وعدد الوجوه إذا تم العثور على وجه واحد على الأقل
     return len(faces) > 0, len(faces)
 
 def get_user_ip():
@@ -48,7 +45,7 @@ TRANSLATIONS = {
         "title": "🎓 نظام تحضير المتدربين الذكي - حاضر AI",
         "menu_student": "بوابة المتدرب/ة (تسجيل دخول)",
         "menu_attendance": "تسجيل الحضور الذكي",
-        "menu_admin": "لوحة تحكم إدارة المعهد",
+        "menu_admin": "لوحة تحكم إدارة المعهد الإحصائية",
         "student_portal": "🔐 بوابة المتدرب/ة الإلكترونية",
         "enter_id_login": "أدخل/ي رقم الهوية الوطنية / الإقامة:",
         "welcome": "أهلاً بك يا",
@@ -65,15 +62,18 @@ TRANSLATIONS = {
         "capture_btn": "تأكيد تسجيل الحضور الذكي",
         "face_success": "✅ تم التعرف على الوجه بنجاح واجتياز كشف الحيوية!",
         "face_error": "❌ لم يتم التعرف على وجه واضح في الصورة! يرجى النظر للكاميرا والتقاط الصورة مجدداً.",
-        "admin_title": "📊 لوحة تحكم إدارة المعهد ومتابعة السجلات",
+        "admin_title": "📊 لوحة التحليلات والإحصائيات وإدارة المعهد",
         "enter_pass": "إدخال الرقم السري للوصول:",
-        "download_csv": "📥 تحميل سجل الحضور المصفى (CSV)"
+        "download_csv": "📥 تحميل سجل الحضور المصفى (CSV)",
+        "total_attendance": "إجمالي حالات الحضور المسجلة",
+        "unique_students": "عدد المتدربين النشطين",
+        "subject_chart": "📈 توزيع الحضور حسب البرامج التدريبية"
     },
     "EN": {
         "title": "🎓 Smart Attendance System - Hader AI",
         "menu_student": "Trainee Portal (Login)",
         "menu_attendance": "Smart Attendance Check-in",
-        "menu_admin": "Institute Admin Panel",
+        "menu_admin": "Institute Analytics & Admin Panel",
         "student_portal": "🔐 Trainee Electronic Portal",
         "enter_id_login": "Enter National ID / Iqama Number:",
         "welcome": "Welcome,",
@@ -90,9 +90,12 @@ TRANSLATIONS = {
         "capture_btn": "Confirm Smart Attendance",
         "face_success": "✅ Human Face Detected & Verified Successfully!",
         "face_error": "❌ No clear human face detected! Please look at the camera and try again.",
-        "admin_title": "📊 Institute Dashboard & Master Logs",
+        "admin_title": "📊 Analytics Dashboard & Master Logs",
         "enter_pass": "Enter Admin Password:",
-        "download_csv": "📥 Download Attendance Log (CSV)"
+        "download_csv": "📥 Download Attendance Log (CSV)",
+        "total_attendance": "Total Attendance Logs",
+        "unique_students": "Active Trainees",
+        "subject_chart": "📈 Attendance Distribution by Course"
     }
 }
 
@@ -180,7 +183,6 @@ elif choice == t["menu_attendance"]:
             
             if uploaded_file is not None:
                 if st.button(t["capture_btn"]):
-                    # فحص كشف الوجه من الكاميرا
                     has_face, face_count = detect_face(uploaded_file)
                     
                     if has_face:
@@ -206,12 +208,28 @@ elif choice == t["menu_attendance"]:
     else:
         st.error(f"{t['network_error']}\n\n(Current IP: {user_ip})")
 
-# 3. لوحة إدارة المعهد
+# 3. لوحة إدارة المعهد والإحصائيات
 elif choice == t["menu_admin"]:
     st.header(t["admin_title"])
     password = st.text_input(t["enter_pass"], type="password")
     if password == "admin123":
         log_df = load_attendance_log(LOG_FILE)
+        
+        # مؤشرات إحصائية
+        col1, col2 = st.columns(2)
+        col1.metric(label=t["total_attendance"], value=len(log_df))
+        unique_students_count = log_df["رقم الهوية"].nunique() if not log_df.empty else 0
+        col2.metric(label=t["unique_students"], value=unique_students_count)
+        
+        st.markdown("---")
+        
+        # رسم بياني إحصائي للحضور حسب المادة
+        if not log_df.empty and "البرنامج التدريبي" in log_df.columns:
+            st.subheader(t["subject_chart"])
+            subject_counts = log_df["البرنامج التدريبي"].value_counts()
+            st.bar_chart(subject_counts)
+        
+        st.subheader("📋 الجدول الكامل للسجلات")
         st.dataframe(log_df, use_container_width=True)
         csv = log_df.to_csv(index=False).encode('utf-8-sig')
         st.download_button(label=t["download_csv"], data=csv, file_name="Hader_AI_Report.csv", mime="text/csv")
