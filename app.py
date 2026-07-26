@@ -21,35 +21,35 @@ INSTITUTE_IP_PREFIX = "192.168"
 TRAINER_ID = "1120491764"
 TRAINER_PASSWORD = "Runoo123"
 
-# --- دالة استخراج البصمة الآمنة والدقيقة ---
-def extract_strict_face_features(img):
+# --- دالة استخراج البصمة الهيكلية فائقة الدقة ---
+def extract_high_precision_features(img):
     try:
-        # تحويل الصورة للرمادي وتعديل التباين
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        gray = clahe.apply(gray)
         
-        # محاولة الكشف عن الوجه
-        face_crop = gray
-        try:
-            cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-            face_cascade = cv2.CascadeClassifier(cascade_path)
-            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(30, 30))
-            if len(faces) > 0:
-                (x, y, w, h) = faces[0]
-                face_crop = gray[y:y+h, x:x+w]
-        except Exception:
-            pass # استخدام الصورة كاملة في حال تعذر تحميل الملحق
+        # 1. اقتطاع منطقة الوجه بدقة عالية
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=6, minSize=(60, 60))
+        
+        if len(faces) == 0:
+            return None, "❌ لم يتم التعرف على وجه واضح! يرجى الاقتراب والنظر مباشرة للكاميرا وفي إضاءة جيدة."
             
-        # توحيد المقاس وحساب المتجه الهيكلي المتوازن
+        (x, y, w, h) = faces[0]
+        face_crop = gray[y:y+h, x:x+w]
         face_resized = cv2.resize(face_crop, (128, 128))
-        hist = cv2.calcHist([face_resized], [0], None, [256], [0, 256])
+        
+        # 2. تطبيق خوارزمية Laplacian لتركيز الانحناءات الملامحية
+        laplacian = cv2.Laplacian(face_resized, cv2.CV_64F)
+        laplacian = np.uint8(np.absolute(laplacian))
+        
+        # 3. استخراج البصمة الهيكلية وتطبيعها
+        hist = cv2.calcHist([laplacian], [0], None, [256], [0, 256])
         cv2.normalize(hist, hist, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+        
         return hist, "OK"
     except Exception as e:
         return None, f"خطأ في معالجة الصورة: {str(e)}"
 
-# --- دالة التحقق الذكي والمطابقة الحيوية ---
+# --- دالة التحقق الذكي والمطابقة ---
 def process_smart_attendance(uploaded_file, student_id):
     try:
         bytes_data = uploaded_file.getvalue()
@@ -57,9 +57,9 @@ def process_smart_attendance(uploaded_file, student_id):
         img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
         
         if img is None:
-            return False, "تعذر قراءة ملف الصورة! يرجى إعادة المحاولة."
+            return False, "تعذر قراءة ملف الصورة!"
             
-        current_hist, msg = extract_strict_face_features(img)
+        current_hist, msg = extract_high_precision_features(img)
         if current_hist is None:
             return False, msg
             
@@ -74,9 +74,8 @@ def process_smart_attendance(uploaded_file, student_id):
         saved_hist = np.load(student_face_path)
         similarity = cv2.compareHist(saved_hist, current_hist, cv2.HISTCMP_CORREL)
         
-        # معيار الأمان الصارم (0.65) لضمان عدم قبول أي شخص آخر
-        if similarity >= 0.65:
-            match_percentage = round(min(99.9, max(82.0, similarity * 100)), 1)
+        if similarity >= 0.85:
+            match_percentage = round(min(99.9, max(85.0, similarity * 100)), 1)
             return True, f"✅ تم التحقق من هويتك بنجاح! (نسبة المطابقة: {match_percentage}%)"
         else:
             return False, "❌ تنبيه أمني: الوجه الظاهر أمام الكاميرا لا يطابق البصمة المسجلة لصاحبة هذه الهوية!"
@@ -240,11 +239,20 @@ elif choice == t["menu_attendance"]:
             st.markdown("---")
             st.subheader(t["step2"])
             
-            face_file = os.path.join(FACES_DIR, f"{student_id}.npy")
-            if not os.path.exists(face_file):
-                st.info("ℹ️ هويتك مسجلة جديداً! سيقوم النظام بتأكيد وحفظ بصمة وجهك المرجعية عند التقاط الصورة الآن.")
+            student_face_path = os.path.join(FACES_DIR, f"{student_id}.npy")
+            
+            # --- إضافة زر إعادة ضبط / حذف البصمة القديمة ---
+            if os.path.exists(student_face_path):
+                st.warning("🔒 يوجد لديكِ بصمة مسجلة سابقاً.")
+                if st.button("🔄 إعادة ضبط وحذف البصمة المسجلة (لإعادة التقاطها بالضوء)"):
+                    try:
+                        os.remove(student_face_path)
+                        st.success("🗑️ تم حذف البصمة القديمة بنجاح! يمكنكِ الآن التقاط صورة جديدة في إضاءة جيدة لتسجيلها كبصمة مرجعية جديدة.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"حدث خطأ أثناء الحذف: {str(e)}")
             else:
-                st.info("🔒 سيتم مطابقة وجهك الآن مع بصمة وجهك المرجعية المسجلة سابقاً في النظام.")
+                st.info("ℹ️ هويتك مسجلة جديداً! سيقوم النظام بتأكيد وحفظ بصمة وجهك المرجعية عند التقاط الصورة الآن.")
                 
             uploaded_file = st.camera_input("📸 Take Photo / التقاط صورة")
             
