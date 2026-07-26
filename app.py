@@ -5,6 +5,7 @@ import pandas as pd
 from datetime import datetime
 import os
 import socket
+import urllib.request
 
 # إعدادات الصفحة الأساسية
 st.set_page_config(page_title="نظام حاضر AI | Hader AI", page_icon="🎓", layout="wide")
@@ -12,10 +13,19 @@ st.set_page_config(page_title="نظام حاضر AI | Hader AI", page_icon="🎓
 DB_PATH = "knowledge_base"
 LOG_FILE = "attendance_log.csv"
 FACES_DIR = "registered_faces"  # مجلد حفظ بصمات الوجوه التلقائية
+CASCADE_FILE = "haarcascade_frontalface_default.xml"
 
 # إنشاء مجلد البصمات إذا لم يكن موجوداً
 if not os.path.exists(FACES_DIR):
     os.makedirs(FACES_DIR)
+
+# تحميل ملف خوارزمية كشف الوجوه تلقائياً إذا لم يكن موجوداً
+if not os.path.exists(CASCADE_FILE):
+    url = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
+    try:
+        urllib.request.urlretrieve(url, CASCADE_FILE)
+    except Exception as e:
+        pass
 
 # نطاق IP شبكة المعهد
 INSTITUTE_IP_PREFIX = "192.168"
@@ -26,22 +36,30 @@ TRAINER_PASSWORD = "Runoo123"
 
 # --- دالة استخراج وجوه واستخراج الملامح ---
 def extract_face_features(img):
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.equalizeHist(gray)
-    
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(30, 30))
-    
-    if len(faces) == 0:
-        return None, "لم يتم التعرف على وجه واضح في الصورة!"
-    
-    (x, y, w, h) = faces[0]
-    face_roi = gray[y:y+h, x:x+w]
-    face_resized = cv2.resize(face_roi, (100, 100))
-    
-    hist = cv2.calcHist([face_resized], [0], None, [256], [0, 256])
-    cv2.normalize(hist, hist)
-    return hist, "OK"
+    try:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray = cv2.equalizeHist(gray)
+        
+        # تحميل خوارزمية كشف الوجوه من الملف المحلي المضمون
+        if os.path.exists(CASCADE_FILE):
+            face_cascade = cv2.CascadeClassifier(CASCADE_FILE)
+        else:
+            face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+            
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(30, 30))
+        
+        if len(faces) == 0:
+            return None, "لم يتم التعرف على وجه واضح في الصورة!"
+        
+        (x, y, w, h) = faces[0]
+        face_roi = gray[y:y+h, x:x+w]
+        face_resized = cv2.resize(face_roi, (100, 100))
+        
+        hist = cv2.calcHist([face_resized], [0], None, [256], [0, 256])
+        cv2.normalize(hist, hist)
+        return hist, "OK"
+    except Exception as e:
+        return None, f"خطأ في معالجة الوجه: {str(e)}"
 
 # --- دالة التحقق الذكي والمطابقة الحيوية ---
 def process_smart_attendance(uploaded_file, student_id):
@@ -144,7 +162,7 @@ TRANSLATIONS = {
         "admin_title": "📊 Trainer Raneem Jareebi Platform - Master Logs & Analytics",
         "trainer_id_label": "Trainer ID Number:",
         "trainer_pass_label": "Trainer Password:",
-        "login_btn": "Login to Trainer Platform",
+        "login_btn": "Trainer Password:",
         "download_csv": "📥 Download Attendance Log (CSV)",
         "total_attendance": "Total Attendance Logs",
         "unique_students": "Active Trainees",
@@ -270,7 +288,7 @@ elif choice == t["menu_attendance"]:
     else:
         st.error(f"{t['network_error']}\n\n(Current IP: {user_ip})")
 
-# 3. منصة المدربة رنيم جريبي للإحصائيات (محدثة برقم الهوية وكلمة المرور)
+# 3. منصة المدربة رنيم جريبي للإحصائيات
 elif choice == t["menu_admin"]:
     st.header(t["admin_title"])
     
