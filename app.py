@@ -11,49 +11,71 @@ st.set_page_config(page_title="نظام حاضر AI | Hader AI", page_icon="🎓
 
 DB_PATH = "knowledge_base"
 LOG_FILE = "attendance_log.csv"
+FACES_DIR = "registered_faces"  # مجلد حفظ بصمات الوجوه التلقائية
 
-# نطاق IP شبكة المعهد (192.168 أو 127.0.0.1 للتجربة)
+# إنشاء مجلد البصمات إذا لم يكن موجوداً
+if not os.path.exists(FACES_DIR):
+    os.makedirs(FACES_DIR)
+
+# نطاق IP شبكة المعهد
 INSTITUTE_IP_PREFIX = "192.168"
 
-# دالة كشف الوجه المحدثة
-def detect_face(uploaded_file):
+# --- دالة استخراج وجوه واستخراج الملامح (Histogram Feature Extraction) ---
+def extract_face_features(img):
+    """ استخراج ملامح الوجه وتحويله لمصفوفة رقمية قارنة """
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.equalizeHist(gray)
+    
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(30, 30))
+    
+    if len(faces) == 0:
+        return None, "لم يتم التعرف على وجه واضح في الصورة!"
+    
+    # أخذ أول وجه ظاهر
+    (x, y, w, h) = faces[0]
+    face_roi = gray[y:y+h, x:x+w]
+    face_resized = cv2.resize(face_roi, (100, 100))
+    
+    # حساب الهستوغرام المتقاطع للوجه كبصمة حيوية
+    hist = cv2.calcHist([face_resized], [0], None, [256], [0, 256])
+    cv2.normalize(hist, hist)
+    return hist, "OK"
+
+# --- دالة التحقق الذكي والمطابقة الحيوية ---
+def process_smart_attendance(uploaded_file, student_id):
     try:
-        if uploaded_file is None:
-            return False, 0
-        
-        # قراءة وتحويل بيانات الصورة بأمان
         bytes_data = uploaded_file.getvalue()
         file_bytes = np.frombuffer(bytes_data, np.uint8)
         img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
         
         if img is None:
-            return False, 0
+            return False, "تعذر قراءة ملف الصورة!"
             
-        # 1. تصغير حجم الصورة إذا كانت كبيرة جداً لتسهيل وسرعة الكشف
-        height, width = img.shape[:2]
-        max_dim = 800
-        if max(height, width) > max_dim:
-            scale = max_dim / float(max(height, width))
-            img = cv2.resize(img, (int(width * scale), int(height * scale)), interpolation=cv2.INTER_AREA)
-
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        current_hist, msg = extract_face_features(img)
+        if current_hist is None:
+            return False, msg
+            
+        student_face_path = os.path.join(FACES_DIR, f"{student_id}.npy")
         
-        # 2. تحسين التباين والإضاءة
-        gray = cv2.equalizeHist(gray)
+        # الحالة 1: تسجيل بصمة أول مرة تلقائياً (Auto-Onboarding)
+        if not os.path.exists(student_face_path):
+            np.save(student_face_path, current_hist)
+            return True, "🎉 تم تسجيل وتفعيل بصمة وجهك المرجعية لأول مرة بنجاح! تم تسجيل الحضور."
+            
+        # الحالة 2: مطابقة الوجه الحالي مع البصمة المسجلة مسبقاً
+        saved_hist = np.load(student_face_path)
+        similarity = cv2.compareHist(saved_hist, current_hist, cv2.HISTCMP_CORREL)
         
-        # 3. تحميل خوارزمية كشف الوجوه بمدخلات مرنة وحساسة
-        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        
-        faces = face_cascade.detectMultiScale(
-            gray, 
-            scaleFactor=1.05, 
-            minNeighbors=3, 
-            minSize=(30, 30)
-        )
-        
-        return len(faces) > 0, len(faces)
+        # نسبة المطابقة (0.5 تعني تطابق مقبول للملامح)
+        if similarity >= 0.5:
+            match_score = round(similarity * 100, 1)
+            return True, f"✅ تم التحقق من هويتك بنجاح! (نسبة المطابقة: {match_score}%)"
+        else:
+            return False, "❌ تنبيه أمني: الوجه الظاهر أمام الكاميرا لا يطابق البصمة المسجلة لصاحبة هذه الهوية!"
+            
     except Exception as e:
-        return False, 0
+        return False, f"حدث خطأ أثناء معالجة البصمة الحيوية: {str(e)}"
 
 def get_user_ip():
     try:
@@ -86,12 +108,10 @@ TRANSLATIONS = {
         "not_found": "رقم الهوية غير مسجل في قاعدة بيانات المعهد!",
         "step1": "📚 خطوة 1: البيانات الأساسية والدورة",
         "select_subject": "اختر/ي المستوى التدريبي (Course Level):",
-        "step2": "🔒 خطوة 2: اختبار الأمان وكشف الحيوية والوجه",
+        "step2": "🔒 خطوة 2: اختبار الأمان المزدوج ومطابقة الوجه الذكية",
         "network_success": "🌐 اتصال آمن: أنت متصل بشبكة المعهد الداخلية",
         "network_error": "❌ تنبيه أمني: يجب الاتصال بشبكة المعهد الداخلية للتمكن من التحضير!",
-        "capture_btn": "تأكيد تسجيل الحضور الذكي",
-        "face_success": "✅ تم التعرف على الوجه بنجاح واجتياز كشف الحيوية!",
-        "face_error": "❌ لم يتم التعرف على وجه واضح في الصورة! يرجى النظر للكاميرا والتقاط الصورة مجدداً.",
+        "capture_btn": "تأكيد تسجيل الحضور والمطابقة",
         "admin_title": "📊 منصة المدربة رنيم جريبي - تحليلات وإحصائيات الحضور",
         "enter_pass": "إدخال الرقم السري للوصول لـ منصة المدربة:",
         "download_csv": "📥 تحميل سجل الحضور المصفى (CSV)",
@@ -115,12 +135,10 @@ TRANSLATIONS = {
         "not_found": "National ID is not registered in the system!",
         "step1": "📚 Step 1: Basic Info & Course Level",
         "select_subject": "Select Course Level:",
-        "step2": "🔒 Step 2: Security, Face & Liveness Test",
+        "step2": "🔒 Step 2: Dual Security & Smart Face Matching",
         "network_success": "🌐 Secure Network: Connected to Institute Wi-Fi",
         "network_error": "❌ Security Alert: You must connect to Institute Wi-Fi to check in!",
-        "capture_btn": "Confirm Smart Attendance",
-        "face_success": "✅ Human Face Detected & Verified Successfully!",
-        "face_error": "❌ No clear human face detected! Please look at the camera and try again.",
+        "capture_btn": "Confirm Attendance & Verification",
         "admin_title": "📊 Trainer Raneem Jareebi Platform - Master Logs & Analytics",
         "enter_pass": "Enter Password for Trainer Platform:",
         "download_csv": "📥 Download Attendance Log (CSV)",
@@ -138,7 +156,6 @@ t = TRANSLATIONS[lang]
 menu = [t["menu_student"], t["menu_attendance"], t["menu_admin"]]
 choice = st.sidebar.selectbox("القائمة" if lang == "AR" else "Navigation", menu)
 
-# قائمة المواد (مستويات اللغة الإنجليزية)
 SUBJECTS = [
     "English Level 1",
     "English Level 2",
@@ -147,7 +164,6 @@ SUBJECTS = [
     "English Level 5"
 ]
 
-# قاعدة بيانات الطلاب (تم التحديث للرقم الجديد)
 STUDENTS_DB = {
     "1120491764": "رنيم حسن جريبي"
 }
@@ -198,7 +214,7 @@ if choice == t["menu_student"]:
         else:
             st.error(t["not_found"])
 
-# 2. تسجيل الحضور
+# 2. تسجيل الحضور الذكي
 elif choice == t["menu_attendance"]:
     st.header(t["menu_attendance"])
     is_institute_net, user_ip = is_connected_to_institute_network()
@@ -214,14 +230,22 @@ elif choice == t["menu_attendance"]:
         if student_id in STUDENTS_DB:
             st.markdown("---")
             st.subheader(t["step2"])
+            
+            # توضيح للمستخدم إذا كان أول مرة أو مسجل سابقاً
+            face_file = os.path.join(FACES_DIR, f"{student_id}.npy")
+            if not os.path.exists(face_file):
+                st.info("ℹ️ هويتك مسجلة جديداً! سيقوم النظام بتأكيد وحفظ بصمة وجهك المرجعية عند التقاط الصورة الآن.")
+            else:
+                st.info("🔒 سيتم مطابقة وجهك الآن مع بصمة وجهك المرجعية المسجلة سابقاً في النظام.")
+                
             uploaded_file = st.camera_input("📸 Take Photo / التقاط صورة")
             
             if uploaded_file is not None:
                 if st.button(t["capture_btn"]):
-                    has_face, face_count = detect_face(uploaded_file)
+                    is_valid, msg = process_smart_attendance(uploaded_file, student_id)
                     
-                    if has_face:
-                        st.success(t["face_success"])
+                    if is_valid:
+                        st.success(msg)
                         st.balloons()
                         
                         log_df = load_attendance_log(LOG_FILE)
@@ -232,12 +256,12 @@ elif choice == t["menu_attendance"]:
                             "التاريخ": datetime.now().strftime("%Y-%m-%d"),
                             "الوقت": datetime.now().strftime("%H:%M:%S"),
                             "الحالة": "حاضر / Present",
-                            "كشف الحيوية": "ناجح / Passed"
+                            "كشف الحيوية": "مطابق / Verified"
                         }])
                         log_df = pd.concat([log_df, new_row], ignore_index=True)
                         log_df.to_csv(LOG_FILE, index=False)
                     else:
-                        st.error(t["face_error"])
+                        st.error(msg)
         elif student_id:
             st.error(t["not_found"])
     else:
@@ -250,7 +274,6 @@ elif choice == t["menu_admin"]:
     if password == "admin123":
         log_df = load_attendance_log(LOG_FILE)
         
-        # مؤشرات إحصائية
         col1, col2 = st.columns(2)
         col1.metric(label=t["total_attendance"], value=len(log_df))
         unique_students_count = log_df["رقم الهوية"].nunique() if not log_df.empty else 0
@@ -258,7 +281,6 @@ elif choice == t["menu_admin"]:
         
         st.markdown("---")
         
-        # رسم بياني إحصائي للحضور حسب مستويات الإنجليزية
         if not log_df.empty and "البرنامج التدريبي" in log_df.columns:
             st.subheader(t["subject_chart"])
             subject_counts = log_df["البرنامج التدريبي"].value_counts()
