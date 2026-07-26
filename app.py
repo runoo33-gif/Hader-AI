@@ -15,7 +15,7 @@ LOG_FILE = "attendance_log.csv"
 # نطاق IP شبكة المعهد (192.168 أو 127.0.0.1 للتجربة)
 INSTITUTE_IP_PREFIX = "192.168"
 
-# دالة كشف الوجه المحدثة والمضمونة من الصورة الملتطقة
+# دالة كشف الوجه المحدثة
 def detect_face(uploaded_file):
     try:
         if uploaded_file is None:
@@ -29,11 +29,27 @@ def detect_face(uploaded_file):
         if img is None:
             return False, 0
             
+        # 1. تصغير حجم الصورة إذا كانت كبيرة جداً لتسهيل وسرعة الكشف
+        height, width = img.shape[:2]
+        max_dim = 800
+        if max(height, width) > max_dim:
+            scale = max_dim / float(max(height, width))
+            img = cv2.resize(img, (int(width * scale), int(height * scale)), interpolation=cv2.INTER_AREA)
+
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         
-        # تحميل خوارزمية كشف الوجوه
+        # 2. تحسين التباين والإضاءة
+        gray = cv2.equalizeHist(gray)
+        
+        # 3. تحميل خوارزمية كشف الوجوه بمدخلات مرنة وحساسة
         face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+        
+        faces = face_cascade.detectMultiScale(
+            gray, 
+            scaleFactor=1.05, 
+            minNeighbors=3, 
+            minSize=(30, 30)
+        )
         
         return len(faces) > 0, len(faces)
     except Exception as e:
@@ -56,9 +72,10 @@ def is_connected_to_institute_network():
 TRANSLATIONS = {
     "AR": {
         "title": "🎓 نظام تحضير المتدربين الذكي - حاضر AI",
+        "trainer_header": "👩‍🏫 إشراف المدربة: رنيم جريبي",
         "menu_student": "بوابة المتدرب/ة (تسجيل دخول)",
         "menu_attendance": "تسجيل الحضور الذكي",
-        "menu_admin": "لوحة تحكم إدارة المعهد الإحصائية",
+        "menu_admin": "منصة المدربة (لوحة التحكم الإحصائية)",
         "student_portal": "🔐 بوابة المتدرب/ة الإلكترونية",
         "enter_id_login": "أدخل/ي رقم الهوية الوطنية / الإقامة:",
         "welcome": "أهلاً بك يا",
@@ -68,25 +85,26 @@ TRANSLATIONS = {
         "no_records": "لم يتم تسجيل أي حالة حضور لك حتى الآن.",
         "not_found": "رقم الهوية غير مسجل في قاعدة بيانات المعهد!",
         "step1": "📚 خطوة 1: البيانات الأساسية والدورة",
-        "select_subject": "اختر/ي المادة / البرنامج التدريبي:",
+        "select_subject": "اختر/ي المستوى التدريبي (Course Level):",
         "step2": "🔒 خطوة 2: اختبار الأمان وكشف الحيوية والوجه",
         "network_success": "🌐 اتصال آمن: أنت متصل بشبكة المعهد الداخلية",
         "network_error": "❌ تنبيه أمني: يجب الاتصال بشبكة المعهد الداخلية للتمكن من التحضير!",
         "capture_btn": "تأكيد تسجيل الحضور الذكي",
         "face_success": "✅ تم التعرف على الوجه بنجاح واجتياز كشف الحيوية!",
         "face_error": "❌ لم يتم التعرف على وجه واضح في الصورة! يرجى النظر للكاميرا والتقاط الصورة مجدداً.",
-        "admin_title": "📊 لوحة التحليلات والإحصائيات وإدارة المعهد",
-        "enter_pass": "إدخال الرقم السري للوصول:",
+        "admin_title": "📊 منصة المدربة رنيم جريبي - تحليلات وإحصائيات الحضور",
+        "enter_pass": "إدخال الرقم السري للوصول لـ منصة المدربة:",
         "download_csv": "📥 تحميل سجل الحضور المصفى (CSV)",
         "total_attendance": "إجمالي حالات الحضور المسجلة",
         "unique_students": "عدد المتدربين النشطين",
-        "subject_chart": "📈 توزيع الحضور حسب البرامج التدريبية"
+        "subject_chart": "📈 توزيع الحضور حسب مستويات اللغة الإنجليزية"
     },
     "EN": {
         "title": "🎓 Smart Attendance System - Hader AI",
+        "trainer_header": "👩‍🏫 Supervised by Trainer: Raneem Jareebi",
         "menu_student": "Trainee Portal (Login)",
         "menu_attendance": "Smart Attendance Check-in",
-        "menu_admin": "Institute Analytics & Admin Panel",
+        "menu_admin": "Trainer Platform (Analytics Dashboard)",
         "student_portal": "🔐 Trainee Electronic Portal",
         "enter_id_login": "Enter National ID / Iqama Number:",
         "welcome": "Welcome,",
@@ -95,20 +113,20 @@ TRANSLATIONS = {
         "records_detail": "📅 Detailed Attendance History:",
         "no_records": "No attendance records found yet.",
         "not_found": "National ID is not registered in the system!",
-        "step1": "📚 Step 1: Basic Info & Training Course",
-        "select_subject": "Select Course / Module:",
+        "step1": "📚 Step 1: Basic Info & Course Level",
+        "select_subject": "Select Course Level:",
         "step2": "🔒 Step 2: Security, Face & Liveness Test",
         "network_success": "🌐 Secure Network: Connected to Institute Wi-Fi",
         "network_error": "❌ Security Alert: You must connect to Institute Wi-Fi to check in!",
         "capture_btn": "Confirm Smart Attendance",
         "face_success": "✅ Human Face Detected & Verified Successfully!",
         "face_error": "❌ No clear human face detected! Please look at the camera and try again.",
-        "admin_title": "📊 Analytics Dashboard & Master Logs",
-        "enter_pass": "Enter Admin Password:",
+        "admin_title": "📊 Trainer Raneem Jareebi Platform - Master Logs & Analytics",
+        "enter_pass": "Enter Password for Trainer Platform:",
         "download_csv": "📥 Download Attendance Log (CSV)",
         "total_attendance": "Total Attendance Logs",
         "unique_students": "Active Trainees",
-        "subject_chart": "📈 Attendance Distribution by Course"
+        "subject_chart": "📈 Attendance Distribution by English Levels"
     }
 }
 
@@ -120,15 +138,18 @@ t = TRANSLATIONS[lang]
 menu = [t["menu_student"], t["menu_attendance"], t["menu_admin"]]
 choice = st.sidebar.selectbox("القائمة" if lang == "AR" else "Navigation", menu)
 
+# قائمة المواد (مستويات اللغة الإنجليزية)
 SUBJECTS = [
-    "الذكاء الاصطناعي (AI)",
-    "معالجة الصور الرقمية (Digital Image Processing)",
-    "الأمن السيبراني (Cybersecurity)",
-    "هندسة البرمجيات (Software Engineering)"
+    "English Level 1",
+    "English Level 2",
+    "English Level 3",
+    "English Level 4",
+    "English Level 5"
 ]
 
+# قاعدة بيانات الطلاب (تم التحديث للرقم الجديد)
 STUDENTS_DB = {
-    "1010004410": "رنيم حسن جريبي"
+    "1120491764": "رنيم حسن جريبي"
 }
 
 def load_attendance_log(file_path):
@@ -145,6 +166,7 @@ def load_attendance_log(file_path):
     return df
 
 st.title(t["title"])
+st.subheader(t["trainer_header"])
 st.markdown("---")
 
 # 1. بوابة المتدرب
@@ -221,7 +243,7 @@ elif choice == t["menu_attendance"]:
     else:
         st.error(f"{t['network_error']}\n\n(Current IP: {user_ip})")
 
-# 3. لوحة إدارة المعهد والإحصائيات
+# 3. منصة المدربة رنيم جريبي للإحصائيات
 elif choice == t["menu_admin"]:
     st.header(t["admin_title"])
     password = st.text_input(t["enter_pass"], type="password")
@@ -236,13 +258,13 @@ elif choice == t["menu_admin"]:
         
         st.markdown("---")
         
-        # رسم بياني إحصائي للحضور حسب المادة
+        # رسم بياني إحصائي للحضور حسب مستويات الإنجليزية
         if not log_df.empty and "البرنامج التدريبي" in log_df.columns:
             st.subheader(t["subject_chart"])
             subject_counts = log_df["البرنامج التدريبي"].value_counts()
             st.bar_chart(subject_counts)
         
-        st.subheader("📋 الجدول الكامل للسجلات")
+        st.subheader("📋 الجدول الكامل لسجلات حضور المتدربين")
         st.dataframe(log_df, use_container_width=True)
         csv = log_df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(label=t["download_csv"], data=csv, file_name="Hader_AI_Report.csv", mime="text/csv")
+        st.download_button(label=t["download_csv"], data=csv, file_name="Trainer_Raneem_Report.csv", mime="text/csv")
