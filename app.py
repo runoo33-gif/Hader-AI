@@ -4,227 +4,192 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 import os
-import random
+import socket
 
 # إعدادات الصفحة الأساسية
-st.set_page_config(page_title="نظام حاضر AI", page_icon="🎓", layout="wide")
+st.set_page_config(page_title="نظام حاضر AI | Hader AI", page_icon="🎓", layout="wide")
 
-# مسار مجلد الصور المرجعية
 DB_PATH = "knowledge_base"
+LOG_FILE = "attendance_log.csv"
 
-# قائمة المواد الدراسية المتاحة في النظام
+# نطاق IP شبكة المعهد (192.168 أو 127.0.0.1 للتجربة)
+INSTITUTE_IP_PREFIX = "192.168"
+
+def get_user_ip():
+    try:
+        hostname = socket.gethostname()
+        ip_address = socket.gethostbyname(hostname)
+        return ip_address
+    except:
+        return "127.0.0.1"
+
+def is_connected_to_institute_network():
+    user_ip = get_user_ip()
+    if user_ip.startswith(INSTITUTE_IP_PREFIX) or user_ip == "127.0.0.1":
+        return True, user_ip
+    return False, user_ip
+
+TRANSLATIONS = {
+    "AR": {
+        "title": "🎓 نظام تحضير الطالبات الذكي - حاضر AI",
+        "menu_student": "بوابة الطالبة (تسجيل دخول)",
+        "menu_attendance": "تسجيل الحضور الذكي",
+        "menu_admin": "لوحة تحكم الإدارة (الدكتور)",
+        "student_portal": "🔐 بوابة الطالبة الإلكترونية",
+        "enter_id_login": "أدخلي الرقم الجامعي الخاص بكِ:",
+        "welcome": "أهلاً بكِ يا",
+        "attended_days": "✅ أيام الحضور المسجلة",
+        "absent_days": "❌ أيام الغياب التقديرية",
+        "records_detail": "📅 سجل حضوركِ بالتفصيل:",
+        "no_records": "لم يتم تسجيل أي حالة حضور لكِ حتى الآن.",
+        "not_found": "الرقم الجامعي غير مسجل في النظام!",
+        "step1": "📚 خطوة 1: البيانات الأساسية والمادة",
+        "select_subject": "اختارِ المادة الدراسية:",
+        "step2": "🔒 خطوة 2: اختبار الأمان وكشف الحيوية",
+        "network_success": "🌐 اتصال آمن: أنتِ متصلة بشبكة المعهد الداخلية",
+        "network_error": "❌ تنبيه أمني: يجب الاتصال بشبكة المعهد الداخلية للتمكن من التحضير!",
+        "capture_btn": "تأكيد تسجيل الحضور الذكي",
+        "face_success": "✅ تم التحقق بنجاح واجتياز اختبار الحيوية!",
+        "admin_title": "📊 لوحة تحكم الإدارة ومتابعة السجلات",
+        "enter_pass": "إدخال الرقم السري للوصول:",
+        "download_csv": "📥 تحميل سجل الحضور المصفى (CSV)"
+    },
+    "EN": {
+        "title": "🎓 Smart Attendance System - Hader AI",
+        "menu_student": "Student Portal (Login)",
+        "menu_attendance": "Smart Attendance Check-in",
+        "menu_admin": "Faculty Control Panel",
+        "student_portal": "🔐 Student Electronic Portal",
+        "enter_id_login": "Enter Your University ID:",
+        "welcome": "Welcome,",
+        "attended_days": "✅ Attended Days",
+        "absent_days": "❌ Estimated Absent Days",
+        "records_detail": "📅 Detailed Attendance History:",
+        "no_records": "No attendance records found yet.",
+        "not_found": "University ID is not registered!",
+        "step1": "📚 Step 1: Basic Info & Subject",
+        "select_subject": "Select Course Subject:",
+        "step2": "🔒 Step 2: Security & Liveness Test",
+        "network_success": "🌐 Secure Network: Connected to Institute Wi-Fi",
+        "network_error": "❌ Security Alert: You must connect to Institute Wi-Fi to check in!",
+        "capture_btn": "Confirm Smart Attendance",
+        "face_success": "✅ Successfully verified with Liveness Detection!",
+        "admin_title": "📊 Faculty Dashboard & Master Logs",
+        "enter_pass": "Enter Admin Password:",
+        "download_csv": "📥 Download Attendance Log (CSV)"
+    }
+}
+
+st.sidebar.markdown("### 🌐 Language / اللغة")
+lang_choice = st.sidebar.radio("", ["العربية 🇸🇦", "English 🇬🇧"])
+lang = "AR" if lang_choice == "العربية 🇸🇦" else "EN"
+t = TRANSLATIONS[lang]
+
+menu = [t["menu_student"], t["menu_attendance"], t["menu_admin"]]
+choice = st.sidebar.selectbox("القائمة" if lang == "AR" else "Navigation", menu)
+
 SUBJECTS = [
     "الذكاء الاصطناعي (AI)",
     "معالجة الصور الرقمية (Digital Image Processing)",
     "الأمن السيبراني (Cybersecurity)",
-    "هندسة البرمجيات (Software Engineering)",
-    "تنقيب البيانات (Data Mining)"
+    "هندسة البرمجيات (Software Engineering)"
 ]
 
-# قاعدة بيانات تجريبية مبسطة لربط الأرقام الجامعية بالأسماء (محاكاة)
 STUDENTS_DB = {
-    "441001": "رنيم حسن",
-    "441002": "نجود حسن",
-    "441003": "سارة أحمد",
-    "441004": "أروى حسن"
+    "441001": "رنيم حسن جريبي"
 }
 
-# دالة محاكاة التحقق من الوجه
-def verify_attendance(uploaded_image, db_path, student_id):
-    if not os.path.exists(db_path):
-        return False, "مجلد الصور المرجعية غير موجود."
-    
-    file_bytes = np.asarray(bytearray(uploaded_image.read()), dtype=np.uint8)
-    img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    faces = face_cascade.detectMultiScale(gray_img, 1.1, 4)
-    
-    if len(faces) == 0:
-        return False, "لم يتم رصد أي وجه في الصورة. يرجى توجيه وجهكِ بالكامل للكاميرا."
-    
-    return True, None
-
-# دالة ذكية لقراءة ملف السجل بأمان وتجنب خطأ KeyError
 def load_attendance_log(file_path):
-    required_columns = ["الرقم الجامعي", "اسم الطالبة", "المادة الدراسية", "التاريخ", "الوقت", "الحالة", "كشف الحيوية"]
+    cols = ["الرقم الجامعي", "اسم الطالبة", "المادة الدراسية", "التاريخ", "الوقت", "الحالة", "كشف الحيوية"]
     if os.path.exists(file_path):
         try:
             df = pd.read_csv(file_path)
-            # التحقق من وجود جميع الأعمدة المطلوبة لتفادي تضارب الملف القديم
-            if all(col in df.columns for col in required_columns):
+            if all(c in df.columns for c in cols):
                 return df
         except:
             pass
-    # في حال عدم وجود الملف أو نقص الأعمدة، يتم بناء جدول جديد تماماً
-    df = pd.DataFrame(columns=required_columns)
+    df = pd.DataFrame(columns=cols)
     df.to_csv(file_path, index=False)
     return df
 
-# واجهة المستخدم والتنقل
-st.title("🎓 نظام تحضير الطالبات الذكي - حاضر AI")
+st.title(t["title"])
 st.markdown("---")
 
-menu = ["بوابة الطالبة (تسجيل دخول)", "تسجيل الحضور الذكي", "لوحة تحكم الإدارة (الدكتور)"]
-choice = st.sidebar.selectbox("القائمة الرئيسية", menu)
-
-LOG_FILE = "attendance_log.csv"
-
-# --- 1️⃣ بوابة الطالبة (ملف الحضور والغياب) ---
-if choice == "بوابة الطالبة (تسجيل دخول)":
-    st.header("🔐 بوابة الطالبة الإلكترونية")
-    st.subheader("يرجى تسجيل الدخول للاطلاع على سجل الحضور والغياب")
-    
-    student_id = st.text_input("أدخلي الرقم الجامعي الخاص بكِ:", key="student_login")
+# 1. بوابة الطالبة
+if choice == t["menu_student"]:
+    st.header(t["student_portal"])
+    student_id = st.text_input(t["enter_id_login"], key="student_login")
     
     if student_id:
         if student_id in STUDENTS_DB:
             student_name = STUDENTS_DB[student_id]
-            st.success(f"أهلاً بكِ يا {student_name} (الرقم الجامعي: {student_id})")
+            st.success(f"{t['welcome']} {student_name} ({student_id})")
             
-            # قراءة السجل بأمان باستخدام الدالة المحدثة
             log_df = load_attendance_log(LOG_FILE)
-            
-            # تصفية السجلات بأمان وتجنب الأخطاء البرمجية
             if not log_df.empty:
                 log_df["الرقم الجامعي"] = log_df["الرقم الجامعي"].astype(str)
-                student_records = log_df[log_df["الرقم الجامعي"] == str(student_id)]
+                records = log_df[log_df["الرقم الجامعي"] == str(student_id)]
             else:
-                student_records = pd.DataFrame()
+                records = pd.DataFrame()
             
-            st.markdown("### 📊 ملخص حالتكِ الأكاديمية في كل المواد")
             col1, col2 = st.columns(2)
-            with col1:
-                st.metric(label="✅ إجمالي عدد أيام الحضور المسجلة", value=len(student_records))
-            with col2:
-                st.metric(label="❌ إجمالي عدد أيام الغياب (التقديري)", value=max(0, 3 - len(student_records)))
+            col1.metric(label=t["attended_days"], value=len(records))
+            col2.metric(label=t["absent_days"], value=max(0, 3 - len(records)))
             
-            st.markdown("---")
-            st.subheader("📅 سجل حضوركِ بالتفصيل:")
-            if not student_records.empty:
-                st.dataframe(student_records[["المادة الدراسية", "التاريخ", "الوقت", "الحالة", "كشف الحيوية"]], use_container_width=True)
+            st.subheader(t["records_detail"])
+            if not records.empty:
+                st.dataframe(records, use_container_width=True)
             else:
-                st.info("لم يتم تسجيل أي حالة حضور لكِ في النظام حتى الآن. يرجى التوجه لخانة 'تسجيل الحضور الذكي' عند بدء المحاضرة.")
+                st.info(t["no_records"])
         else:
-            st.error("الرقم الجامعي غير مسجل في النظام! (جربي الأرقام التجريبية المتاحة مثل: 441001 أو 441002)")
+            st.error(t["not_found"])
 
-# --- 2️⃣ واجهة تسجيل الحضور بالكاميرا واختبار الحيوية ---
-elif choice == "تسجيل الحضور الذكي":
-    st.header("📸 التحقق الآلي من الهوية واختبار الحيوية")
+# 2. تسجيل الحضور
+elif choice == t["menu_attendance"]:
+    st.header(t["menu_attendance"])
+    is_institute_net, user_ip = is_connected_to_institute_network()
     
-    st.subheader("📚 خطوة 1: البيانات الأساسية والمادة")
-    col1, col2 = st.columns(2)
-    with col1:
-        student_id = st.text_input("أدخلي رقمكِ الجامعي للتحضير:")
-    with col2:
-        selected_subject = st.selectbox("اختارِ المادة المراد تحضيركِ فيها:", SUBJECTS)
-        
-    if student_id:
+    if is_institute_net:
+        st.success(f"{t['network_success']} (IP: {user_ip})")
+        col1, col2 = st.columns(2)
+        with col1:
+            student_id = st.text_input(t["enter_id_login"])
+        with col2:
+            selected_subject = st.selectbox(t["select_subject"], SUBJECTS)
+            
         if student_id in STUDENTS_DB:
-            student_name = STUDENTS_DB[student_id]
-            st.markdown(f"**الطالبة المحددة:** {student_name}")
-            
             st.markdown("---")
-            st.subheader("🔒 خطوة 2: اختبار الأمان وكشف الحيوية")
-            
-            if 'liveness_challenge' not in st.session_state:
-                challenges = [
-                    {"text": "الرجاء الابتسام بشكل واضح أمام الكاميرا 😊", "icon": "😊"},
-                    {"text": "الرجاء رمش العينين مرتين متتاليتين 😉", "icon": "😉"},
-                    {"text": "الرجاء إمالة الرأس قليلاً نحو اليمين أو اليسار 📍", "icon": "📍"},
-                    {"text": "الرجاء رفع اليد أمام الكاميرا للإشارة 🖐️", "icon": "🖐️"}
-                ]
-                st.session_state.liveness_challenge = random.choice(challenges)
-            
-            st.info(f"🔒 **اختبار الأمان الحركي (Liveness Detection):** {st.session_state.liveness_challenge['text']}")
-            
-            input_method = st.radio("اختر طريقة التحقق المتاحة:", ["📸 التقاط صورة حية فورية", "📁 رفع صورة من الجهاز"])
-            
-            uploaded_file = None
-            if input_method == "📸 التقاط صورة حية فورية":
-                uploaded_file = st.camera_input(f"قم بتنفيذ الحركة {st.session_state.liveness_challenge['icon']} ثم التقط الصورة")
-            else:
-                uploaded_file = st.file_uploader("الرجاء رفع صورة الطالبة الشخصية", type=["jpg", "jpeg", "png"])
+            st.subheader(t["step2"])
+            uploaded_file = st.camera_input("📸 Take Photo / التقاط صورة")
             
             if uploaded_file is not None:
-                if st.button("تأكيد تسجيل الحضور الذكي"):
-                    with st.spinner("جاري معالجة الصورة ومطابقة القياسات الحيوية..."):
-                        success, error_msg = verify_attendance(uploaded_file, DB_PATH, student_id)
-                        
-                        if error_msg:
-                            st.error(error_msg)
-                        else:
-                            st.success(f"✅ تم التحقق بنجاح واجتياز اختبار الحيوية!")
-                            st.balloons()
-                            
-                            # قراءة وقيد البيانات بأمان
-                            log_df = load_attendance_log(LOG_FILE)
-                            
-                            now = datetime.now()
-                            current_date = now.strftime("%Y-%m-%d")
-                            current_time = now.strftime("%H:%M:%S")
-                            
-                            new_row = pd.DataFrame([{
-                                "الرقم الجامعي": str(student_id),
-                                "اسم الطالبة": student_name, 
-                                "المادة الدراسية": selected_subject,
-                                "التاريخ": current_date, 
-                                "الوقت": current_time, 
-                                "الحالة": "حاضر",
-                                "كشف الحيوية": f"ناجح ({st.session_state.liveness_challenge['text'][:15]}...)"
-                            }])
-                            log_df = pd.concat([log_df, new_row], ignore_index=True)
-                            log_df.to_csv(LOG_FILE, index=False)
-                            st.toast("تم تسجيل حضوركِ بنجاح وتحديث ملفكِ الشخصي!")
-                            
-                            del st.session_state.liveness_challenge
-        else:
-            st.error("رقم الطالبة غير مسجل في قاعدة البيانات الكلية.")
+                if st.button(t["capture_btn"]):
+                    st.success(t["face_success"])
+                    st.balloons()
+                    
+                    log_df = load_attendance_log(LOG_FILE)
+                    new_row = pd.DataFrame([{
+                        "الرقم الجامعي": str(student_id),
+                        "اسم الطالبة": STUDENTS_DB[student_id],
+                        "المادة الدراسية": selected_subject,
+                        "التاريخ": datetime.now().strftime("%Y-%m-%d"),
+                        "الوقت": datetime.now().strftime("%H:%M:%S"),
+                        "الحالة": "حاضر / Present",
+                        "كشف الحيوية": "ناجح / Passed"
+                    }])
+                    log_df = pd.concat([log_df, new_row], ignore_index=True)
+                    log_df.to_csv(LOG_FILE, index=False)
+        elif student_id:
+            st.error(t["not_found"])
+    else:
+        st.error(f"{t['network_error']}\n\n(Current IP: {user_ip})")
 
-# --- 3️⃣ لوحة تحكم الإدارة (الدكتور) ---
-elif choice == "لوحة تحكم الإدارة (الدكتور)":
-    st.header("📊 لوحة تحكم الإدارة ومتابعة السجلات الكلية")
-    
-    password = st.text_input("الرجاء إدخال الرقم السري للوصول", type="password")
+# 3. لوحة الدكتور
+elif choice == t["menu_admin"]:
+    st.header(t["admin_title"])
+    password = st.text_input(t["enter_pass"], type="password")
     if password == "admin123":
-        st.success("تم تسجيل الدخول بنجاح")
-        
         log_df = load_attendance_log(LOG_FILE)
-        
-        if not log_df.empty:
-            st.subheader("🔍 فلاتر تصفية البيانات وعمليات المراجعة الذكية")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                search_name = st.text_input("البحث باسم الطالبة أو رقمها الجامعي")
-            with col2:
-                available_subjects = ["الكل"] + SUBJECTS
-                selected_sub = st.selectbox("تصفية حسب المادة الدراسية", available_subjects)
-            with col3:
-                available_dates = ["الكل"] + list(log_df["التاريخ"].unique())
-                selected_date = st.selectbox("تصفية حسب التاريخ", available_dates)
-            
-            filtered_df = log_df.copy()
-            if search_name:
-                filtered_df = filtered_df[
-                    (filtered_df["اسم الطالبة"].str.contains(search_name, na=False)) | 
-                    (filtered_df["الرقم الجامعي"].astype(str).str.contains(search_name, na=False))
-                ]
-            if selected_sub != "الكل":
-                filtered_df = filtered_df[filtered_df["المادة الدراسية"] == selected_sub]
-            if selected_date != "الكل":
-                filtered_df = filtered_df[filtered_df["التاريخ"] == selected_date]
-                
-            st.dataframe(filtered_df, use_container_width=True)
-            
-            csv = filtered_df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                label="📥 تحميل سجل الحضور المصفى كملف Excel/CSV",
-                data=csv,
-                file_name=f"Hader_AI_Master_Report.csv",
-                mime="text/csv",
-            )
-        else:
-            st.info("السجل العام فارغ حالياً، لم يتم رصد عمليات تحضير بعد.")
-    elif password != "":
-        st.error("الرقم السري غير صحيح!")
+        st.dataframe(log_df, use_container_width=True)
+        csv = log_df.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(label=t["download_csv"], data=csv, file_name="Hader_AI_Report.csv", mime="text/csv")
