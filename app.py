@@ -21,68 +21,61 @@ INSTITUTE_IP_PREFIX = "192.168"
 TRAINER_ID = "1120491764"
 TRAINER_PASSWORD = "Runoo123"
 
-# --- دالة استخراج البصمة الهيكلية المستقلة والمضمونة 100% ---
-def extract_high_precision_features(img):
+# --- دالة فحص الإضاءة والوضوح (تمنع التقاط الصور في الظلام) ---
+def check_image_lighting(img):
     try:
-        # 1. تحويل للصورة الرمادية وتحديد المنطقة المركزية للوجه
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        h, w = gray.shape
-        
-        # اقتطاع الجزء المركزي من الصورة (حيث يقع الوجه دائماً عند التصوير)
-        crop_h, crop_w = int(h * 0.7), int(w * 0.7)
-        start_y, start_x = (h - crop_h) // 2, (w - crop_w) // 2
-        face_crop = gray[start_y:start_y+crop_h, start_x:start_x+crop_w]
-        
-        # 2. تغيير الحجم وموازنة التباين
-        face_resized = cv2.resize(face_crop, (128, 128))
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-        enhanced_face = clahe.apply(face_resized)
-        
-        # 3. حساب ملامح الحواف الهيكلية المقاومة للإضاءة والتشابه
-        sobelx = cv2.Sobel(enhanced_face, cv2.CV_64F, 1, 0, ksize=3)
-        sobely = cv2.Sobel(enhanced_face, cv2.CV_64F, 0, 1, ksize=3)
-        gradient_magnitude = cv2.magnitude(sobelx, sobely)
-        gradient_magnitude = np.uint8(np.clip(gradient_magnitude, 0, 255))
-        
-        # 4. حساب وتطبيع مدرج التكرار الملامحي (Histogram)
-        hist = cv2.calcHist([gradient_magnitude], [0], None, [256], [0, 256])
-        cv2.normalize(hist, hist, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
-        
-        return hist, "OK"
+        brightness = np.mean(gray)
+        # إذا كانت الإضاءة أقل من 50 (ظلام أو عتمة)، يتم رفض الصورة مباشرة
+        if brightness < 50:
+            return False, "❌ الإضاءة ضعيفة جداً (ظلام)! يرجى التقاط الصورة في مكان مضوء وواضح."
+        return True, "OK"
     except Exception as e:
-        return None, f"خطأ في معالجة الصورة: {str(e)}"
+        return True, "OK"
 
-# --- دالة التحقق الذكي والمطابقة ---
+# --- دالة استخراج الملامح الأساسية ---
+def extract_features(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+    crop_h, crop_w = int(h * 0.7), int(w * 0.7)
+    start_y, start_x = (h - crop_h) // 2, (w - crop_w) // 2
+    face_crop = gray[start_y:start_y+crop_h, start_x:start_x+crop_w]
+    face_resized = cv2.resize(face_crop, (128, 128))
+    hist = cv2.calcHist([face_resized], [0], None, [256], [0, 256])
+    cv2.normalize(hist, hist, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+    return hist
+
+# --- دالة تسجيل وحضور النظام الأساسي ---
 def process_smart_attendance(uploaded_file, student_id):
     try:
         bytes_data = uploaded_file.getvalue()
         file_bytes = np.frombuffer(bytes_data, np.uint8)
-        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        img = cv2.imdecode(file_bytes, np.IMREAD_COLOR)
         
         if img is None:
             return False, "تعذر قراءة ملف الصورة!"
             
-        current_hist, msg = extract_high_precision_features(img)
-        if current_hist is None:
-            return False, msg
+        # 1. التحقق من أن الصورة ليست في الظلام
+        is_bright, light_msg = check_image_lighting(img)
+        if not is_bright:
+            return False, light_msg
             
+        current_hist = extract_features(img)
         student_face_path = os.path.join(FACES_DIR, f"{student_id}.npy")
         
-        # 1. التسجيل لأول مرة (Auto-Onboarding)
+        # التسجيل لأول مرة
         if not os.path.exists(student_face_path):
             np.save(student_face_path, current_hist)
-            return True, "🎉 تم تسجيل وتفعيل بصمة وجهك المرجعية لأول مرة بنجاح! تم تسجيل الحضور."
+            return True, "🎉 تم تسجيل بصمتك المرجعية بنجاح في إضاءة جيدة! تم تسجيل الحضور."
             
-        # 2. مطابقة البصمة المرجعية
+        # المطابقة مع البصمة القديمة
         saved_hist = np.load(student_face_path)
         similarity = cv2.compareHist(saved_hist, current_hist, cv2.HISTCMP_CORREL)
         
-        # نسبة حماية عالية وصارمة
-        if similarity >= 0.82:
-            match_percentage = round(min(99.9, max(85.0, similarity * 100)), 1)
-            return True, f"✅ تم التحقق من هويتك بنجاح! (نسبة المطابقة: {match_percentage}%)"
+        if similarity >= 0.85:
+            return True, f"✅ تم التحقق من هويتك بنجاح! (نسبة المطابقة: {round(similarity*100, 1)}%)"
         else:
-            return False, "❌ تنبيه أمني: الوجه الظاهر أمام الكاميرا لا يطابق البصمة المسجلة لصاحبة هذه الهوية!"
+            return False, "❌ تنبيه أمني: الوجه الظاهر لا يطابق البصمة المسجلة!"
             
     except Exception as e:
         return False, f"حدث خطأ أثناء المعالجة: {str(e)}"
@@ -90,8 +83,7 @@ def process_smart_attendance(uploaded_file, student_id):
 def get_user_ip():
     try:
         hostname = socket.gethostname()
-        ip_address = socket.gethostbyname(hostname)
-        return ip_address
+        return socket.gethostbyname(hostname)
     except:
         return "127.0.0.1"
 
@@ -116,9 +108,8 @@ TRANSLATIONS = {
         "records_detail": "📅 سجل حضورك بالتفصيل:",
         "no_records": "لم يتم تسجيل أي حالة حضور لك حتى الآن.",
         "not_found": "رقم الهوية غير مسجل في قاعدة بيانات المعهد!",
-        "step1": "📚 خطوة 1: البيانات الأساسية والدورة",
         "select_subject": "اختر/ي المستوى التدريبي (Course Level):",
-        "step2": "🔒 خطوة 2: اختبار الأمان المزدوج ومطابقة الوجه الذكية",
+        "step2": "🔒 خطوة 2: التحقق الذكي ومطابقة الوجه",
         "network_success": "🌐 اتصال آمن: أنت متصل بشبكة المعهد الداخلية",
         "network_error": "❌ تنبيه أمني: يجب الاتصال بشبكة المعهد الداخلية للتمكن من التحضير!",
         "capture_btn": "تأكيد تسجيل الحضور والمطابقة",
@@ -144,9 +135,8 @@ TRANSLATIONS = {
         "records_detail": "📅 Detailed Attendance History:",
         "no_records": "No attendance records found yet.",
         "not_found": "National ID is not registered in the system!",
-        "step1": "📚 Step 1: Basic Info & Course Level",
         "select_subject": "Select Course Level:",
-        "step2": "🔒 Step 2: Dual Security & Smart Face Matching",
+        "step2": "🔒 Step 2: Smart Face Matching",
         "network_success": "🌐 Secure Network: Connected to Institute Wi-Fi",
         "network_error": "❌ Security Alert: You must connect to Institute Wi-Fi to check in!",
         "capture_btn": "Confirm Attendance & Verification",
@@ -168,17 +158,8 @@ t = TRANSLATIONS[lang]
 menu = [t["menu_student"], t["menu_attendance"], t["menu_admin"]]
 choice = st.sidebar.selectbox("القائمة" if lang == "AR" else "Navigation", menu)
 
-SUBJECTS = [
-    "English Level 1",
-    "English Level 2",
-    "English Level 3",
-    "English Level 4",
-    "English Level 5"
-]
-
-STUDENTS_DB = {
-    "1120491764": "رنيم حسن جريبي"
-}
+SUBJECTS = ["English Level 1", "English Level 2", "English Level 3", "English Level 4", "English Level 5"]
+STUDENTS_DB = {"1120491764": "رنيم حسن جريبي"}
 
 def load_attendance_log(file_path):
     cols = ["رقم الهوية", "اسم المتدرب/ة", "البرنامج التدريبي", "التاريخ", "الوقت", "الحالة", "كشف الحيوية"]
@@ -197,22 +178,14 @@ st.title(t["title"])
 st.subheader(t["trainer_header"])
 st.markdown("---")
 
-# 1. بوابة المتدرب
 if choice == t["menu_student"]:
     st.header(t["student_portal"])
     student_id = st.text_input(t["enter_id_login"], key="student_login")
-    
     if student_id:
         if student_id in STUDENTS_DB:
-            student_name = STUDENTS_DB[student_id]
-            st.success(f"{t['welcome']} {student_name} ({student_id})")
-            
+            st.success(f"{t['welcome']} {STUDENTS_DB[student_id]} ({student_id})")
             log_df = load_attendance_log(LOG_FILE)
-            if not log_df.empty:
-                log_df["رقم الهوية"] = log_df["رقم الهوية"].astype(str)
-                records = log_df[log_df["رقم الهوية"] == str(student_id)]
-            else:
-                records = pd.DataFrame()
+            records = log_df[log_df["رقم الهوية"].astype(str) == str(student_id)] if not log_df.empty else pd.DataFrame()
             
             col1, col2 = st.columns(2)
             col1.metric(label=t["attended_days"], value=len(records))
@@ -226,7 +199,6 @@ if choice == t["menu_student"]:
         else:
             st.error(t["not_found"])
 
-# 2. تسجيل الحضور الذكي
 elif choice == t["menu_attendance"]:
     st.header(t["menu_attendance"])
     is_institute_net, user_ip = is_connected_to_institute_network()
@@ -242,32 +214,16 @@ elif choice == t["menu_attendance"]:
         if student_id in STUDENTS_DB:
             st.markdown("---")
             st.subheader(t["step2"])
+            st.info("ℹ️ يرجى التأكد من إضاءة المكان بشكل جيد قبل التقاط الصورة.")
             
-            student_face_path = os.path.join(FACES_DIR, f"{student_id}.npy")
-            
-            # --- زر مؤقت لحذف البصمة القديمة المصورة بالظلام ---
-            if os.path.exists(student_face_path):
-                st.warning("🔒 يوجد لديكِ بصمة مسجلة سابقاً.")
-                if st.button("🔄 اضغطي هنا لحذف البصمة القديمة (لإعادة التقاطها في النور)"):
-                    try:
-                        os.remove(student_face_path)
-                        st.success("🗑️ تم حذف البصمة القديمة! يمكنكِ الآن التقاط صورة جديدة في إضاءة ممتازة لتسجيلها.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"حدث خطأ أثناء الحذف: {str(e)}")
-            else:
-                st.info("ℹ️ هويتك مسجلة جديداً! سيقوم النظام بتأكيد وحفظ بصمة وجهك المرجعية عند التقاط الصورة الآن.")
-                
             uploaded_file = st.camera_input("📸 Take Photo / التقاط صورة")
             
             if uploaded_file is not None:
                 if st.button(t["capture_btn"]):
                     is_valid, msg = process_smart_attendance(uploaded_file, student_id)
-                    
                     if is_valid:
                         st.success(msg)
                         st.balloons()
-                        
                         log_df = load_attendance_log(LOG_FILE)
                         new_row = pd.DataFrame([{
                             "رقم الهوية": str(student_id),
@@ -287,10 +243,8 @@ elif choice == t["menu_attendance"]:
     else:
         st.error(f"{t['network_error']}\n\n(Current IP: {user_ip})")
 
-# 3. منصة المدربة
 elif choice == t["menu_admin"]:
     st.header(t["admin_title"])
-    
     col_id, col_pass = st.columns(2)
     with col_id:
         input_trainer_id = st.text_input(t["trainer_id_label"])
@@ -299,24 +253,31 @@ elif choice == t["menu_admin"]:
         
     if input_trainer_id or input_password:
         if input_trainer_id == TRAINER_ID and input_password == TRAINER_PASSWORD:
-            st.success("🔓 تم التحقق من هوية المدربة وتسجيل الدخول بنجاح!")
+            st.success("🔓 تم التحقق من هوية المدربة بنجاح!")
             log_df = load_attendance_log(LOG_FILE)
             
             col1, col2 = st.columns(2)
             col1.metric(label=t["total_attendance"], value=len(log_df))
-            unique_students_count = log_df["رقم الهوية"].nunique() if not log_df.empty else 0
-            col2.metric(label=t["unique_students"], value=unique_students_count)
+            col2.metric(label=t["unique_students"], value=log_df["رقم الهوية"].nunique() if not log_df.empty else 0)
             
             st.markdown("---")
-            
+            st.subheader("🔑 لوحة إدارة البصمات (حذف بصمة متدرب)")
+            reset_id = st.text_input("أدخلي رقم الهوية المراد حذف بصمتها القديمة:")
+            if st.button("حذف البصمة نهائياً"):
+                target_file = os.path.join(FACES_DIR, f"{reset_id}.npy")
+                if os.path.exists(target_file):
+                    os.remove(target_file)
+                    st.success(f"تم حذف بصمة الهوية {reset_id} بنجاح. يمكن الآن تسجيلها من جديد.")
+                else:
+                    st.warning("لا توجد بصمة مسجلة لهذا الرقم.")
+                    
+            st.markdown("---")
             if not log_df.empty and "البرنامج التدريبي" in log_df.columns:
                 st.subheader(t["subject_chart"])
-                subject_counts = log_df["البرنامج التدريبي"].value_counts()
-                st.bar_chart(subject_counts)
+                st.bar_chart(log_df["البرنامج التدريبي"].value_counts())
             
-            st.subheader("📋 الجدول الكامل لسجلات حضور المتدربين")
+            st.subheader("📋 الجدول الكامل لسجلات الحضور")
             st.dataframe(log_df, use_container_width=True)
-            csv = log_df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(label=t["download_csv"], data=csv, file_name="Trainer_Raneem_Report.csv", mime="text/csv")
+            st.download_button(label=t["download_csv"], data=log_df.to_csv(index=False).encode('utf-8-sig'), file_name="Trainer_Raneem_Report.csv", mime="text/csv")
         else:
             st.error("❌ خطأ في رقم الهوية أو كلمة المرور الخاصة بالمدربة!")
