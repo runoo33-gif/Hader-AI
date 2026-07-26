@@ -20,9 +20,12 @@ if not os.path.exists(FACES_DIR):
 # نطاق IP شبكة المعهد
 INSTITUTE_IP_PREFIX = "192.168"
 
-# --- دالة استخراج وجوه واستخراج الملامح (Histogram Feature Extraction) ---
+# --- بيانات دخول المدربة ---
+TRAINER_ID = "1120491764"
+TRAINER_PASSWORD = "Runoo123"
+
+# --- دالة استخراج وجوه واستخراج الملامح ---
 def extract_face_features(img):
-    """ استخراج ملامح الوجه وتحويله لمصفوفة رقمية قارنة """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = cv2.equalizeHist(gray)
     
@@ -32,12 +35,10 @@ def extract_face_features(img):
     if len(faces) == 0:
         return None, "لم يتم التعرف على وجه واضح في الصورة!"
     
-    # أخذ أول وجه ظاهر
     (x, y, w, h) = faces[0]
     face_roi = gray[y:y+h, x:x+w]
     face_resized = cv2.resize(face_roi, (100, 100))
     
-    # حساب الهستوغرام المتقاطع للوجه كبصمة حيوية
     hist = cv2.calcHist([face_resized], [0], None, [256], [0, 256])
     cv2.normalize(hist, hist)
     return hist, "OK"
@@ -67,7 +68,6 @@ def process_smart_attendance(uploaded_file, student_id):
         saved_hist = np.load(student_face_path)
         similarity = cv2.compareHist(saved_hist, current_hist, cv2.HISTCMP_CORREL)
         
-        # نسبة المطابقة (0.5 تعني تطابق مقبول للملامح)
         if similarity >= 0.5:
             match_score = round(similarity * 100, 1)
             return True, f"✅ تم التحقق من هويتك بنجاح! (نسبة المطابقة: {match_score}%)"
@@ -113,7 +113,9 @@ TRANSLATIONS = {
         "network_error": "❌ تنبيه أمني: يجب الاتصال بشبكة المعهد الداخلية للتمكن من التحضير!",
         "capture_btn": "تأكيد تسجيل الحضور والمطابقة",
         "admin_title": "📊 منصة المدربة رنيم جريبي - تحليلات وإحصائيات الحضور",
-        "enter_pass": "إدخال الرقم السري للوصول لـ منصة المدربة:",
+        "trainer_id_label": "رقم هوية المدربة:",
+        "trainer_pass_label": "كلمة المرور الخاصة بالمدربة:",
+        "login_btn": "تسجيل الدخول لمنصة المدربة",
         "download_csv": "📥 تحميل سجل الحضور المصفى (CSV)",
         "total_attendance": "إجمالي حالات الحضور المسجلة",
         "unique_students": "عدد المتدربين النشطين",
@@ -140,7 +142,9 @@ TRANSLATIONS = {
         "network_error": "❌ Security Alert: You must connect to Institute Wi-Fi to check in!",
         "capture_btn": "Confirm Attendance & Verification",
         "admin_title": "📊 Trainer Raneem Jareebi Platform - Master Logs & Analytics",
-        "enter_pass": "Enter Password for Trainer Platform:",
+        "trainer_id_label": "Trainer ID Number:",
+        "trainer_pass_label": "Trainer Password:",
+        "login_btn": "Login to Trainer Platform",
         "download_csv": "📥 Download Attendance Log (CSV)",
         "total_attendance": "Total Attendance Logs",
         "unique_students": "Active Trainees",
@@ -231,7 +235,6 @@ elif choice == t["menu_attendance"]:
             st.markdown("---")
             st.subheader(t["step2"])
             
-            # توضيح للمستخدم إذا كان أول مرة أو مسجل سابقاً
             face_file = os.path.join(FACES_DIR, f"{student_id}.npy")
             if not os.path.exists(face_file):
                 st.info("ℹ️ هويتك مسجلة جديداً! سيقوم النظام بتأكيد وحفظ بصمة وجهك المرجعية عند التقاط الصورة الآن.")
@@ -267,26 +270,36 @@ elif choice == t["menu_attendance"]:
     else:
         st.error(f"{t['network_error']}\n\n(Current IP: {user_ip})")
 
-# 3. منصة المدربة رنيم جريبي للإحصائيات
+# 3. منصة المدربة رنيم جريبي للإحصائيات (محدثة برقم الهوية وكلمة المرور)
 elif choice == t["menu_admin"]:
     st.header(t["admin_title"])
-    password = st.text_input(t["enter_pass"], type="password")
-    if password == "admin123":
-        log_df = load_attendance_log(LOG_FILE)
+    
+    col_id, col_pass = st.columns(2)
+    with col_id:
+        input_trainer_id = st.text_input(t["trainer_id_label"])
+    with col_pass:
+        input_password = st.text_input(t["trainer_pass_label"], type="password")
         
-        col1, col2 = st.columns(2)
-        col1.metric(label=t["total_attendance"], value=len(log_df))
-        unique_students_count = log_df["رقم الهوية"].nunique() if not log_df.empty else 0
-        col2.metric(label=t["unique_students"], value=unique_students_count)
-        
-        st.markdown("---")
-        
-        if not log_df.empty and "البرنامج التدريبي" in log_df.columns:
-            st.subheader(t["subject_chart"])
-            subject_counts = log_df["البرنامج التدريبي"].value_counts()
-            st.bar_chart(subject_counts)
-        
-        st.subheader("📋 الجدول الكامل لسجلات حضور المتدربين")
-        st.dataframe(log_df, use_container_width=True)
-        csv = log_df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(label=t["download_csv"], data=csv, file_name="Trainer_Raneem_Report.csv", mime="text/csv")
+    if input_trainer_id or input_password:
+        if input_trainer_id == TRAINER_ID and input_password == TRAINER_PASSWORD:
+            st.success("🔓 تم التحقق من هوية المدربة وتسجيل الدخول بنجاح!")
+            log_df = load_attendance_log(LOG_FILE)
+            
+            col1, col2 = st.columns(2)
+            col1.metric(label=t["total_attendance"], value=len(log_df))
+            unique_students_count = log_df["رقم الهوية"].nunique() if not log_df.empty else 0
+            col2.metric(label=t["unique_students"], value=unique_students_count)
+            
+            st.markdown("---")
+            
+            if not log_df.empty and "البرنامج التدريبي" in log_df.columns:
+                st.subheader(t["subject_chart"])
+                subject_counts = log_df["البرنامج التدريبي"].value_counts()
+                st.bar_chart(subject_counts)
+            
+            st.subheader("📋 الجدول الكامل لسجلات حضور المتدربين")
+            st.dataframe(log_df, use_container_width=True)
+            csv = log_df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(label=t["download_csv"], data=csv, file_name="Trainer_Raneem_Report.csv", mime="text/csv")
+        else:
+            st.error("❌ خطأ في رقم الهوية أو كلمة المرور الخاصة بالمدربة!")
