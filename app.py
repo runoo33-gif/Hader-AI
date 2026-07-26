@@ -15,6 +15,20 @@ LOG_FILE = "attendance_log.csv"
 # نطاق IP شبكة المعهد (192.168 أو 127.0.0.1 للتجربة)
 INSTITUTE_IP_PREFIX = "192.168"
 
+# دالة كشف الوجه من الصورة الملتطقة
+def detect_face(image_bytes):
+    # تحويل الصورة إلى مصفوفة OpenCV
+    file_bytes = np.asarray(bytearray(image_bytes.read()), dtype=uint8)
+    img = cv2.imdecode(file_bytes, 1)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # تحميل خوارزمية كشف الوجوه من OpenCV
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+    
+    # إرجاع True وعدد الوجوه إذا تم العثور على وجه واحد على الأقل
+    return len(faces) > 0, len(faces)
+
 def get_user_ip():
     try:
         hostname = socket.gethostname()
@@ -45,11 +59,12 @@ TRANSLATIONS = {
         "not_found": "رقم الهوية غير مسجل في قاعدة بيانات المعهد!",
         "step1": "📚 خطوة 1: البيانات الأساسية والدورة",
         "select_subject": "اختر/ي المادة / البرنامج التدريبي:",
-        "step2": "🔒 خطوة 2: اختبار الأمان وكشف الحيوية",
+        "step2": "🔒 خطوة 2: اختبار الأمان وكشف الحيوية والوجه",
         "network_success": "🌐 اتصال آمن: أنت متصل بشبكة المعهد الداخلية",
         "network_error": "❌ تنبيه أمني: يجب الاتصال بشبكة المعهد الداخلية للتمكن من التحضير!",
         "capture_btn": "تأكيد تسجيل الحضور الذكي",
-        "face_success": "✅ تم التحقق بنجاح واجتياز اختبار الحيوية!",
+        "face_success": "✅ تم التعرف على الوجه بنجاح واجتياز كشف الحيوية!",
+        "face_error": "❌ لم يتم التعرف على وجه واضح في الصورة! يرجى النظر للكاميرا والتقاط الصورة مجدداً.",
         "admin_title": "📊 لوحة تحكم إدارة المعهد ومتابعة السجلات",
         "enter_pass": "إدخال الرقم السري للوصول:",
         "download_csv": "📥 تحميل سجل الحضور المصفى (CSV)"
@@ -69,11 +84,12 @@ TRANSLATIONS = {
         "not_found": "National ID is not registered in the system!",
         "step1": "📚 Step 1: Basic Info & Training Course",
         "select_subject": "Select Course / Module:",
-        "step2": "🔒 Step 2: Security & Liveness Test",
+        "step2": "🔒 Step 2: Security, Face & Liveness Test",
         "network_success": "🌐 Secure Network: Connected to Institute Wi-Fi",
         "network_error": "❌ Security Alert: You must connect to Institute Wi-Fi to check in!",
         "capture_btn": "Confirm Smart Attendance",
-        "face_success": "✅ Successfully verified with Liveness Detection!",
+        "face_success": "✅ Human Face Detected & Verified Successfully!",
+        "face_error": "❌ No clear human face detected! Please look at the camera and try again.",
         "admin_title": "📊 Institute Dashboard & Master Logs",
         "enter_pass": "Enter Admin Password:",
         "download_csv": "📥 Download Attendance Log (CSV)"
@@ -95,7 +111,6 @@ SUBJECTS = [
     "هندسة البرمجيات (Software Engineering)"
 ]
 
-# قاعدة بيانات المتدربين برقم الهوية
 STUDENTS_DB = {
     "1010004410": "رنيم حسن جريبي"
 }
@@ -165,21 +180,27 @@ elif choice == t["menu_attendance"]:
             
             if uploaded_file is not None:
                 if st.button(t["capture_btn"]):
-                    st.success(t["face_success"])
-                    st.balloons()
+                    # فحص كشف الوجه من الكاميرا
+                    has_face, face_count = detect_face(uploaded_file)
                     
-                    log_df = load_attendance_log(LOG_FILE)
-                    new_row = pd.DataFrame([{
-                        "رقم الهوية": str(student_id),
-                        "اسم المتدرب/ة": STUDENTS_DB[student_id],
-                        "البرنامج التدريبي": selected_subject,
-                        "التاريخ": datetime.now().strftime("%Y-%m-%d"),
-                        "الوقت": datetime.now().strftime("%H:%M:%S"),
-                        "الحالة": "حاضر / Present",
-                        "كشف الحيوية": "ناجح / Passed"
-                    }])
-                    log_df = pd.concat([log_df, new_row], ignore_index=True)
-                    log_df.to_csv(LOG_FILE, index=False)
+                    if has_face:
+                        st.success(t["face_success"])
+                        st.balloons()
+                        
+                        log_df = load_attendance_log(LOG_FILE)
+                        new_row = pd.DataFrame([{
+                            "رقم الهوية": str(student_id),
+                            "اسم المتدرب/ة": STUDENTS_DB[student_id],
+                            "البرنامج التدريبي": selected_subject,
+                            "التاريخ": datetime.now().strftime("%Y-%m-%d"),
+                            "الوقت": datetime.now().strftime("%H:%M:%S"),
+                            "الحالة": "حاضر / Present",
+                            "كشف الحيوية": "ناجح / Passed"
+                        }])
+                        log_df = pd.concat([log_df, new_row], ignore_index=True)
+                        log_df.to_csv(LOG_FILE, index=False)
+                    else:
+                        st.error(t["face_error"])
         elif student_id:
             st.error(t["not_found"])
     else:
