@@ -15,16 +15,29 @@ LOG_FILE = "attendance_log.csv"
 # نطاق IP شبكة المعهد (192.168 أو 127.0.0.1 للتجربة)
 INSTITUTE_IP_PREFIX = "192.168"
 
-# دالة كشف الوجه من الصورة الملتطقة
-def detect_face(image_bytes):
-    file_bytes = np.asarray(bytearray(image_bytes.read()), dtype=np.uint8)
-    img = cv2.imdecode(file_bytes, 1)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-    
-    return len(faces) > 0, len(faces)
+# دالة كشف الوجه المحدثة والمضمونة من الصورة الملتطقة
+def detect_face(uploaded_file):
+    try:
+        if uploaded_file is None:
+            return False, 0
+        
+        # قراءة وتحويل بيانات الصورة بأمان
+        bytes_data = uploaded_file.getvalue()
+        file_bytes = np.frombuffer(bytes_data, np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            return False, 0
+            
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+        # تحميل خوارزمية كشف الوجوه
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+        
+        return len(faces) > 0, len(faces)
+    except Exception as e:
+        return False, 0
 
 def get_user_ip():
     try:
