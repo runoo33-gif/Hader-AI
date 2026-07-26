@@ -31,50 +31,50 @@ def is_connected_to_institute_network():
 
 TRANSLATIONS = {
     "AR": {
-        "title": "🎓 نظام تحضير الطالبات الذكي - حاضر AI",
-        "menu_student": "بوابة الطالبة (تسجيل دخول)",
+        "title": "🎓 نظام تحضير المتدربين الذكي - حاضر AI",
+        "menu_student": "بوابة المتدرب/ة (تسجيل دخول)",
         "menu_attendance": "تسجيل الحضور الذكي",
-        "menu_admin": "لوحة تحكم الإدارة (الدكتور)",
-        "student_portal": "🔐 بوابة الطالبة الإلكترونية",
-        "enter_id_login": "أدخلي الرقم الجامعي الخاص بكِ:",
-        "welcome": "أهلاً بكِ يا",
+        "menu_admin": "لوحة تحكم إدارة المعهد",
+        "student_portal": "🔐 بوابة المتدرب/ة الإلكترونية",
+        "enter_id_login": "أدخل/ي رقم الهوية الوطنية / الإقامة:",
+        "welcome": "أهلاً بك يا",
         "attended_days": "✅ أيام الحضور المسجلة",
         "absent_days": "❌ أيام الغياب التقديرية",
-        "records_detail": "📅 سجل حضوركِ بالتفصيل:",
-        "no_records": "لم يتم تسجيل أي حالة حضور لكِ حتى الآن.",
-        "not_found": "الرقم الجامعي غير مسجل في النظام!",
-        "step1": "📚 خطوة 1: البيانات الأساسية والمادة",
-        "select_subject": "اختارِ المادة الدراسية:",
+        "records_detail": "📅 سجل حضورك بالتفصيل:",
+        "no_records": "لم يتم تسجيل أي حالة حضور لك حتى الآن.",
+        "not_found": "رقم الهوية غير مسجل في قاعدة بيانات المعهد!",
+        "step1": "📚 خطوة 1: البيانات الأساسية والدورة",
+        "select_subject": "اختر/ي المادة / البرنامج التدريبي:",
         "step2": "🔒 خطوة 2: اختبار الأمان وكشف الحيوية",
-        "network_success": "🌐 اتصال آمن: أنتِ متصلة بشبكة المعهد الداخلية",
+        "network_success": "🌐 اتصال آمن: أنت متصل بشبكة المعهد الداخلية",
         "network_error": "❌ تنبيه أمني: يجب الاتصال بشبكة المعهد الداخلية للتمكن من التحضير!",
         "capture_btn": "تأكيد تسجيل الحضور الذكي",
         "face_success": "✅ تم التحقق بنجاح واجتياز اختبار الحيوية!",
-        "admin_title": "📊 لوحة تحكم الإدارة ومتابعة السجلات",
+        "admin_title": "📊 لوحة تحكم إدارة المعهد ومتابعة السجلات",
         "enter_pass": "إدخال الرقم السري للوصول:",
         "download_csv": "📥 تحميل سجل الحضور المصفى (CSV)"
     },
     "EN": {
         "title": "🎓 Smart Attendance System - Hader AI",
-        "menu_student": "Student Portal (Login)",
+        "menu_student": "Trainee Portal (Login)",
         "menu_attendance": "Smart Attendance Check-in",
-        "menu_admin": "Faculty Control Panel",
-        "student_portal": "🔐 Student Electronic Portal",
-        "enter_id_login": "Enter Your University ID:",
+        "menu_admin": "Institute Admin Panel",
+        "student_portal": "🔐 Trainee Electronic Portal",
+        "enter_id_login": "Enter National ID / Iqama Number:",
         "welcome": "Welcome,",
         "attended_days": "✅ Attended Days",
         "absent_days": "❌ Estimated Absent Days",
         "records_detail": "📅 Detailed Attendance History:",
         "no_records": "No attendance records found yet.",
-        "not_found": "University ID is not registered!",
-        "step1": "📚 Step 1: Basic Info & Subject",
-        "select_subject": "Select Course Subject:",
+        "not_found": "National ID is not registered in the system!",
+        "step1": "📚 Step 1: Basic Info & Training Course",
+        "select_subject": "Select Course / Module:",
         "step2": "🔒 Step 2: Security & Liveness Test",
         "network_success": "🌐 Secure Network: Connected to Institute Wi-Fi",
         "network_error": "❌ Security Alert: You must connect to Institute Wi-Fi to check in!",
         "capture_btn": "Confirm Smart Attendance",
         "face_success": "✅ Successfully verified with Liveness Detection!",
-        "admin_title": "📊 Faculty Dashboard & Master Logs",
+        "admin_title": "📊 Institute Dashboard & Master Logs",
         "enter_pass": "Enter Admin Password:",
         "download_csv": "📥 Download Attendance Log (CSV)"
     }
@@ -95,12 +95,13 @@ SUBJECTS = [
     "هندسة البرمجيات (Software Engineering)"
 ]
 
+# قاعدة بيانات المتدربين برقم الهوية
 STUDENTS_DB = {
-    "441001": "رنيم حسن جريبي"
+    "1010004410": "رنيم حسن جريبي"
 }
 
 def load_attendance_log(file_path):
-    cols = ["الرقم الجامعي", "اسم الطالبة", "المادة الدراسية", "التاريخ", "الوقت", "الحالة", "كشف الحيوية"]
+    cols = ["رقم الهوية", "اسم المتدرب/ة", "البرنامج التدريبي", "التاريخ", "الوقت", "الحالة", "كشف الحيوية"]
     if os.path.exists(file_path):
         try:
             df = pd.read_csv(file_path)
@@ -115,7 +116,7 @@ def load_attendance_log(file_path):
 st.title(t["title"])
 st.markdown("---")
 
-# 1. بوابة الطالبة
+# 1. بوابة المتدرب
 if choice == t["menu_student"]:
     st.header(t["student_portal"])
     student_id = st.text_input(t["enter_id_login"], key="student_login")
@@ -127,8 +128,8 @@ if choice == t["menu_student"]:
             
             log_df = load_attendance_log(LOG_FILE)
             if not log_df.empty:
-                log_df["الرقم الجامعي"] = log_df["الرقم الجامعي"].astype(str)
-                records = log_df[log_df["الرقم الجامعي"] == str(student_id)]
+                log_df["رقم الهوية"] = log_df["رقم الهوية"].astype(str)
+                records = log_df[log_df["رقم الهوية"] == str(student_id)]
             else:
                 records = pd.DataFrame()
             
@@ -169,9 +170,9 @@ elif choice == t["menu_attendance"]:
                     
                     log_df = load_attendance_log(LOG_FILE)
                     new_row = pd.DataFrame([{
-                        "الرقم الجامعي": str(student_id),
-                        "اسم الطالبة": STUDENTS_DB[student_id],
-                        "المادة الدراسية": selected_subject,
+                        "رقم الهوية": str(student_id),
+                        "اسم المتدرب/ة": STUDENTS_DB[student_id],
+                        "البرنامج التدريبي": selected_subject,
                         "التاريخ": datetime.now().strftime("%Y-%m-%d"),
                         "الوقت": datetime.now().strftime("%H:%M:%S"),
                         "الحالة": "حاضر / Present",
@@ -184,7 +185,7 @@ elif choice == t["menu_attendance"]:
     else:
         st.error(f"{t['network_error']}\n\n(Current IP: {user_ip})")
 
-# 3. لوحة الدكتور
+# 3. لوحة إدارة المعهد
 elif choice == t["menu_admin"]:
     st.header(t["admin_title"])
     password = st.text_input(t["enter_pass"], type="password")
